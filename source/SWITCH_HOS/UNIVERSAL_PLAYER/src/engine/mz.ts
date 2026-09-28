@@ -2,7 +2,6 @@ import type { RuntimeContext } from '../types';
 import { extractScriptSources, ScriptLoader } from '../host/scripts';
 import { installMZStandaloneHostPump } from './mz_standalone';
 import { installMZAudioCompat } from './mz_audio';
-import { installMZManifestWarm } from './mz_warm';
 import { isWoff1, woff1ToSfnt } from '../compat/woff_sfnt';
 
 function mzSfntHasHangul(data: ArrayBuffer | ArrayBufferView) {
@@ -1657,8 +1656,9 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   installMZFontBridge(ctx);
   installMZSceneDiagnostics(ctx);
   installMZDamageBitmapCache(ctx);
-  installMZManifestWarm(ctx);
-  log('[mz-warm] V041 heuristic battle prewarm disabled; manifest gate is authoritative');
+  installMZEventAssetPrewarm(ctx);
+  installMZBattlePrewarm(ctx);
+  log('[mz-warm] V046 manifest compiler/gate disabled; V041 nonblocking event/battle prewarm restored');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
   dispatchWindowLoad(log);
