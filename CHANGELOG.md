@@ -4,19 +4,19 @@
 
 ### English
 
-- Launcher 0.5.0: Start+Select now opens an exit confirmation dialog instead of exiting immediately.
-- Launcher 0.5.0: first launch creates `/mvmz/gamelist.json`; folder names are used as defaults and can be mapped to custom display names such as Korean titles.
-- Launcher 0.5.0: Select toggles between the existing text list and a 5-column x 2-row thumbnail grid.
-- Launcher 0.5.0: thumbnails are loaded from `/mvmz/_image/<folder-name>.png` and center-cropped/resized to portrait cards automatically.
-- MV/MZ 0.45.0: Start+Select in-game now opens a Yes/No exit-to-launcher overlay, with RPG Maker gamepad input suppressed until confirmation controls are released.
+- Launcher 0.6.0: prevents nx.js' built-in Plus-only exit behavior through the cancelable `beforeunload` path. Plus/Start alone is reserved and no longer intended to exit MVMZPLAYER; the custom Start+Select confirmation remains the only exit gesture.
+- MV 0.46.0: removes the V044 first-run automatic warm-manifest compiler and runtime self-learning layer, restoring the V043-compatible MV warm path after device testing showed startup/map-transition regressions and compatibility loss in some previously working MV titles.
+- MZ 0.46.0: removes the V044 synchronous all-map manifest compiler and blocking Scene_Map manifest gate, restoring the V041 nonblocking event/battle prewarm path while retaining the established save, SE-cache and damage-bitmap stability work.
+- Split runtime startup now writes additional flushed checkpoints around image bridge, location setup, script-loader creation and engine boot entry/return so very-early startup failures can be isolated from the next device log.
+- Launcher game-name mapping, thumbnail view, 5x2 grid and Start+Select Yes/No UI from 0.5.0 are retained.
 
 ### 한국어
 
-- Launcher 0.5.0: Start+Select를 눌러도 즉시 종료하지 않고 종료 확인 팝업을 표시하도록 변경했습니다.
-- Launcher 0.5.0: 최초 실행 시 `/mvmz/gamelist.json`을 자동 생성합니다. 기본 표시명은 폴더명이며 JSON에서 한글 등 원하는 게임명으로 바꿀 수 있습니다.
-- Launcher 0.5.0: Select 버튼으로 기존 텍스트 목록과 가로 5개 x 세로 2줄 썸네일 목록을 전환할 수 있습니다.
-- Launcher 0.5.0: `/mvmz/_image/<폴더명>.png` 이미지를 읽어 세로형 카드에 맞게 자동 중앙 크롭/리사이즈합니다.
-- MV/MZ 0.45.0: 게임 중 Start+Select를 누르면 예/아니오 종료 확인 팝업이 뜨며, 확인 입력이 게임에 같이 전달되지 않도록 버튼을 모두 놓을 때까지 RPG Maker 게임패드 입력을 차단합니다.
+- Launcher 0.6.0: nx.js 자체의 기본 동작인 `Plus(Start) 단독 = 종료`를 cancel 가능한 `beforeunload` 경로에서 차단했습니다. 이제 Start 단독은 MVMZPLAYER 종료 용도로 사용하지 않으며, 종료는 기존의 Start+Select 확인 팝업만 담당합니다.
+- MV 0.46.0: 실기에서 시작/맵 전환 지연과 기존 정상 게임 일부의 호환성 회귀가 확인되어 V044에서 추가한 첫 실행 자동 warm-manifest 컴파일러와 runtime self-learning을 제거하고 V043 호환 MV warm 경로로 복귀했습니다.
+- MZ 0.46.0: V044의 부팅 중 전체 맵 동기 manifest 컴파일과 Scene_Map blocking gate를 제거하고 V041의 비차단 이벤트/전투 프리웜 경로로 복귀했습니다. 기존 저장 안정화, SE 캐시, 데미지 비트맵 캐시는 유지합니다.
+- 아주 이른 부팅 실패를 다음 실기 로그에서 정확히 좁힐 수 있도록 image bridge, location, script loader, engine boot 진입/복귀 지점에 즉시 flush되는 체크포인트 로그를 추가했습니다.
+- Launcher 0.5.0의 게임명 매핑, 썸네일, 5x2 그리드, Start+Select 예/아니오 UI는 그대로 유지합니다.
 
 ## Public Beta 0.1
 
