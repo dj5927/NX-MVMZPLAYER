@@ -56,6 +56,13 @@ export function installPointerBridge(log: LogFn) {
   if (g.__mvmzPointerBridgeInstalled) return;
   g.__mvmzPointerBridgeInstalled = true;
 
+  const hostRaf = typeof g.requestAnimationFrame === 'function'
+    ? g.requestAnimationFrame.bind(g)
+    : null;
+  const getGamepads = typeof navigator.getGamepads === 'function'
+    ? navigator.getGamepads.bind(navigator)
+    : null;
+
   const width = Math.max(1, Number(screen.width || 1280));
   const height = Math.max(1, Number(screen.height || 720));
   let pointerX = width / 2;
@@ -65,7 +72,7 @@ export function installPointerBridge(log: LogFn) {
   let touchLeft = false;
   let activated = false;
   let cursor: any = null;
-  let lastFrameTime = Number(performance.now?.() || Date.now());
+  let lastPollTime = Number(performance.now?.() || Date.now());
   let lastActivityAt = 0;
 
   const markActivity = () => {
@@ -191,7 +198,6 @@ export function installPointerBridge(log: LogFn) {
   }
 
   const updateCursor = () => {
-    if (!activated) return;
     const pixi = g.PIXI;
     const scene = g.SceneManager?._scene;
     if (!pixi?.Graphics || !scene?.addChild) return;
@@ -251,12 +257,12 @@ export function installPointerBridge(log: LogFn) {
     } catch {}
   };
 
-  const frame = (timestamp?: number) => {
-    const now = Number(timestamp ?? performance.now?.() ?? Date.now());
-    const dt = Math.min(0.05, Math.max(0, (now - lastFrameTime) / 1000));
-    lastFrameTime = now;
+  const pollGamepad = () => {
+    const now = Number(performance.now?.() || Date.now());
+    const dt = Math.min(0.05, Math.max(0, (now - lastPollTime) / 1000));
+    lastPollTime = now;
     try {
-      const pad = navigator.getGamepads()[0];
+      const pad = getGamepads?.()[0];
       const axisX = curvedAxis(Number(pad?.axes?.[RIGHT_STICK_X] || 0));
       const axisY = curvedAxis(Number(pad?.axes?.[RIGHT_STICK_Y] || 0));
       if (axisX || axisY) {
@@ -266,8 +272,11 @@ export function installPointerBridge(log: LogFn) {
       setPadLeft(!!pad?.buttons?.[ZL_BUTTON]?.pressed);
       setPadRight(!!pad?.buttons?.[ZR_BUTTON]?.pressed);
     } catch {}
+  };
+
+  const frame = () => {
     updateCursor();
-    try { requestAnimationFrame(frame); } catch {}
+    try { hostRaf?.(frame); } catch {}
   };
 
   g.__mvmzPointer = {
@@ -276,6 +285,11 @@ export function installPointerBridge(log: LogFn) {
     get active() { return activated; },
     moveTo(x: number, y: number) { markActivity(); movePointer(x, y, true); }
   };
-  log('[pointer] bridge installed | touch=left mouse rightStick=axes2/3 ZL=left ZR=right cursor=PIXI idleParkMs=3000 visibleToggle=off coordinateMap=logical-inverse');
-  try { requestAnimationFrame(frame); } catch (error) { log(`[pointer] RAF pump FAILED | ${String(error)}`); }
+  log('[pointer] bridge installed | touch=left mouse rightStick=axes2/3 ZL=left ZR=right cursor=PIXI idleParkMs=3000 visibleToggle=off coordinateMap=logical-inverse gamepadPoll=16ms cursorRAF=fixed-host');
+  setInterval(pollGamepad, 16);
+  if (!hostRaf) {
+    log('[pointer] cursor RAF unavailable; gamepad/touch polling remains active');
+    return;
+  }
+  try { hostRaf(frame); } catch (error) { log(`[pointer] cursor RAF pump FAILED | ${String(error)}`); }
 }

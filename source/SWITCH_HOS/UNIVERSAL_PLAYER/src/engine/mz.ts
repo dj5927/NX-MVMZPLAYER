@@ -1507,7 +1507,7 @@ function installMZBattlePrewarm(ctx: RuntimeContext) {
         for (const action of data?.actions || []) addSkillAnimation(animationIds, g.$dataSkills?.[Number(action?.skillId || 0)]);
       }
     } catch {}
-    const selectedIds = Array.from(animationIds).slice(0, 40);
+    const selectedIds = Array.from(animationIds).slice(0, 32);
     const effects = new Set<string>();
     const sounds = new Set<string>();
     for (const id of selectedIds) {
@@ -1521,33 +1521,12 @@ function installMZBattlePrewarm(ctx: RuntimeContext) {
     }
     return {
       animationIds: selectedIds,
-      effects: Array.from(effects).slice(0, 20),
-      sounds: Array.from(sounds).slice(0, 32)
+      effects: Array.from(effects).slice(0, 12),
+      sounds: Array.from(sounds).slice(0, 24)
     };
-  };
-  const prewarmBattleGlyphs = () => {
-    if (g.__mvmzMzBattleGlyphWarmDone) return;
-    g.__mvmzMzBattleGlyphWarmDone = true;
-    try {
-      const canvas = g.document.createElement('canvas');
-      canvas.width = 384;
-      canvas.height = 64;
-      const c = canvas.getContext('2d');
-      if (!c) return;
-      const family = String(g.$gameSystem?.numberFontFace?.() || 'rmmz-numberfont');
-      c.font = `40px ${family}`;
-      c.fillStyle = '#fff';
-      c.fillText('0123456789+-Miss', 2, 48);
-      c.getImageData(0, 0, canvas.width, canvas.height);
-      ctx.log(`[mz-battle-warm] numeric glyph raster warm | font=${family}`);
-    } catch (error) {
-      ctx.log(`[mz-battle-warm] numeric glyph raster warm FAILED | ${String((error as any)?.message ?? error)}`);
-    }
   };
   const prewarm = () => {
     const serial = ++planSerial;
-    prewarmBattleGlyphs();
-    try { g.__mvmzMZPrewarmDamageDigits?.(); } catch {}
     const plan = collectPlan();
     ctx.log(`[mz-battle-warm] plan | animations=${plan.animationIds.length} effects=${plan.effects.length} se=${plan.sounds.length}`);
     for (const name of plan.effects) {
@@ -1558,7 +1537,7 @@ function installMZBattlePrewarm(ctx: RuntimeContext) {
     const queue = plan.sounds.slice();
     const pump = () => {
       if (serial !== planSerial || !queue.length) return;
-      for (let i = 0; i < 3 && queue.length; i++) {
+      for (let i = 0; i < 2 && queue.length; i++) {
         const name = queue.shift()!;
         try { g.__mvmzMZPrewarmSe?.(name); } catch {}
       }
@@ -1642,23 +1621,13 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   if (!sources.length) throw new Error('MZ index.html has no external scripts');
   log(`[mz] index scripts=${sources.length} | ${sources.join(', ')}`);
 
-  ctx.reportProgress?.('MZ 스크립트 로딩 중', 34, `0/${sources.length}`);
   for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
     const source = sources[sourceIndex];
     if (!fs.exists(source)) throw new Error(`MZ script missing: ${source}`);
     scripts.loadNow(source, false, undefined, document);
-    const progress = 34 + Math.round(((sourceIndex + 1) / sources.length) * 40);
-    ctx.reportProgress?.('MZ 스크립트 로딩 중', progress, `${sourceIndex + 1}/${sources.length}  ${source}`);
-    if ((sourceIndex + 1) % 4 === 0 || sourceIndex + 1 === sources.length) {
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    }
   }
 
-  ctx.reportProgress?.('MZ 플러그인 초기화 중', 78, '동적 플러그인 처리');
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   await scripts.drain();
-  ctx.reportProgress?.('MZ 호환 기능 적용 중', 86, '폰트 / 저장 / 이미지 / 전투 캐시');
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   const g: any = globalThis as any;
   if (g.Utils && g.Utils.RPGMAKER_NAME && g.Utils.RPGMAKER_NAME !== 'MZ') {
     throw new Error(`MZ engine identity mismatch: ${g.Utils.RPGMAKER_NAME}`);
@@ -1667,11 +1636,8 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   installMZFontBridge(ctx);
   installMZSceneDiagnostics(ctx);
   installMZDamageBitmapCache(ctx);
-  installMZEventAssetPrewarm(ctx);
-  installMZBattlePrewarm(ctx);
-  log('[mz-warm] V047 manifest compiler/gate remains disabled; V041 nonblocking event/battle prewarm retained');
+  log('[mz-warm] V048 all proactive asset/battle warm paths disabled; on-demand MZ loading restored');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
-  ctx.reportProgress?.('게임 시작 중', 98, `RPG Maker MZ ${g.Utils?.RPGMAKER_VERSION ?? ''}`);
   dispatchWindowLoad(log);
 }

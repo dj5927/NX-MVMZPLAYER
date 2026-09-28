@@ -635,6 +635,34 @@ async function withMvImageDecodeSlot(work) {
     if (next) next();
   }
 }
+function mvNeedsExactIndexedAlphaPng(bytes, url) {
+  try {
+    if (!/\.png(?:$|[?#])/i.test(String(url || "")) && !/^data:image\/png/i.test(String(url || ""))) return false;
+    const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (input.byteLength < 33) return false;
+    if (input[0] !== 0x89 || input[1] !== 0x50 || input[2] !== 0x4e || input[3] !== 0x47 || input[4] !== 0x0d || input[5] !== 0x0a || input[6] !== 0x1a || input[7] !== 0x0a) return false;
+    if (input[25] !== 3) return false;
+    const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+    let offset = 8;
+    while (offset + 12 <= input.byteLength) {
+      const length = view.getUint32(offset, false);
+      const dataStart = offset + 8;
+      const dataEnd = dataStart + length;
+      if (dataEnd + 4 > input.byteLength) return false;
+      const tag = String.fromCharCode(input[offset + 4], input[offset + 5], input[offset + 6], input[offset + 7]);
+      if (tag === 'tRNS') {
+        for (let i = dataStart; i < dataEnd; i++) {
+          const alpha = input[i];
+          if (alpha > 0 && alpha < 255) return true;
+        }
+        return false;
+      }
+      if (tag === 'IEND') return false;
+      offset = dataEnd + 4;
+    }
+  } catch {}
+  return false;
+}
 async function decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState) {
   const g = globalThis;
   try {
@@ -646,56 +674,44 @@ async function decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState) {
       ctx.log(`[mv-img] prefetch complete | ${url}`);
       return;
     }
-    const decoded = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-    if (bitmap._loadingState !== expectedState) {
-      decoded.close();
-      return;
-    }
-    const canvas = g.document.createElement("canvas");
-    canvas.width = Math.max(1, decoded.width);
-    canvas.height = Math.max(1, decoded.height);
-    const context = canvas.getContext("2d");
-    if (!context) {
-      decoded.close();
-      throw new Error("2D canvas context unavailable for decoded bitmap");
-    }
-    context.drawImage(decoded, 0, 0);
-    decoded.close();
-
-    // nx.js createImageBitmap currently preserves alpha coverage but loses
-    // straight RGB precision under semi-transparent PNG pixels. That is
-    // harmless for opaque art, but it produces red/cyan fringes once Pixi
-    // uploads the canvas as a premultiplied texture. Keep the fast native
-    // decoder for opaque/binary-alpha images and re-decode only PNGs that
-    // actually contain 0 < alpha < 255 using pngjs' exact RGBA path.
-    let semiTransparent = false;
-    try {
-      const nativePixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      for (let i = 3; i < nativePixels.length; i += 4) {
-        const alpha = nativePixels[i];
-        if (alpha > 0 && alpha < 255) {
-          semiTransparent = true;
-          break;
-        }
-      }
-    } catch (probeError) {
-      ctx.log(`[mv-img] semi-alpha probe FAILED | ${url} | ${String(probeError)}`);
-    }
-    const exactEligible = semiTransparent && (/\.png(?:$|[?#])/i.test(String(url || "")) || /^data:image\/png/i.test(String(url || "")));
+    let canvas = null;
+    let context = null;
+    const exactEligible = mvNeedsExactIndexedAlphaPng(bytes, url);
     if (exactEligible) {
       try {
         const exact = await decodePngExact(bytes);
         if (bitmap._loadingState !== expectedState) return;
-        if (exact.width !== canvas.width || exact.height !== canvas.height) {
-          throw new Error(`geometry mismatch native=${canvas.width}x${canvas.height} exact=${exact.width}x${exact.height}`);
-        }
+        canvas = g.document.createElement("canvas");
+        canvas.width = Math.max(1, exact.width);
+        canvas.height = Math.max(1, exact.height);
+        context = canvas.getContext("2d");
+        if (!context) throw new Error("2D canvas context unavailable for exact PNG");
         const imageData = context.createImageData(exact.width, exact.height);
         imageData.data.set(exact.data);
         context.putImageData(imageData, 0, 0);
-        ctx.log(`[mv-img] exact PNG alpha restore | ${url} ${exact.width}x${exact.height} bytes=${exact.data.byteLength}`);
+        ctx.log(`[mv-img] exact indexed-alpha PNG restore | ${url} ${exact.width}x${exact.height} bytes=${exact.data.byteLength}`);
       } catch (exactError) {
-        ctx.log(`[mv-img] exact PNG alpha restore FAILED | ${url} | ${String(exactError)} | fallback=native-canvas`);
+        canvas = null;
+        context = null;
+        ctx.log(`[mv-img] exact indexed-alpha PNG restore FAILED | ${url} | ${String(exactError)} | fallback=native-canvas`);
       }
+    }
+    if (!canvas || !context) {
+      const decoded = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      if (bitmap._loadingState !== expectedState) {
+        decoded.close();
+        return;
+      }
+      canvas = g.document.createElement("canvas");
+      canvas.width = Math.max(1, decoded.width);
+      canvas.height = Math.max(1, decoded.height);
+      context = canvas.getContext("2d");
+      if (!context) {
+        decoded.close();
+        throw new Error("2D canvas context unavailable for decoded bitmap");
+      }
+      context.drawImage(decoded, 0, 0);
+      decoded.close();
     }
     bitmap.__canvas = canvas;
     bitmap.__context = context;
@@ -1154,6 +1170,14 @@ function installMvSceneManagerHostHooks(ctx) {
   const originalOnSceneStart = sm.onSceneStart?.bind(sm);
   sm.onSceneStart = function() {
     const result = originalOnSceneStart?.();
+    const hold = g.__mvmzMvScenePresentationHold;
+    if (hold?.active) {
+      hold.active = false;
+      if (!hold.releasedLogged) {
+        hold.releasedLogged = true;
+        ctx.log(`[mv-scene-hold] release | scene=${String(hold.sceneName || "unknown")} reason=scene-start elapsedMs=${Date.now() - Number(hold.startedAt || Date.now())}`);
+      }
+    }
     try {
       const renderer = g.Graphics?._renderer;
       if (renderer?.reset) {
@@ -2350,7 +2374,6 @@ export async function bootMv(ctx, scripts) {
   const sources = extractScriptSources(indexHtml);
   if (!sources.length) throw new Error("MV index.html has no external scripts");
   log(`[mv] index scripts=${sources.length} | ${sources.join(", ")}`);
-  ctx.reportProgress?.('MV 스크립트 로딩 중', 34, `0/${sources.length}`);
   for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
     const source = sources[sourceIndex];
     if (!fs.exists(source)) {
@@ -2371,17 +2394,8 @@ export async function bootMv(ctx, scripts) {
     }
     scripts.loadNow(source, isBrowserLibrary(source), void 0, document);
     afterCoreScript(source, ctx);
-    const progress = 34 + Math.round(((sourceIndex + 1) / sources.length) * 40);
-    ctx.reportProgress?.('MV 스크립트 로딩 중', progress, `${sourceIndex + 1}/${sources.length}  ${source}`);
-    if ((sourceIndex + 1) % 4 === 0 || sourceIndex + 1 === sources.length) {
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    }
   }
-  ctx.reportProgress?.('MV 플러그인 초기화 중', 78, '동적 플러그인 처리');
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   await scripts.drain();
-  ctx.reportProgress?.('MV 호환 기능 적용 중', 84, '오디오 / 이미지 / 폰트 / 그래픽');
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   installMvPostPluginSaveCompat(ctx);
   restoreMvCoreAudioForStreamingPlugin(ctx);
   installMvAudioDiagnostics(ctx);
@@ -2393,15 +2407,13 @@ export async function bootMv(ctx, scripts) {
   installMvGraphicsPerformanceBridge(ctx);
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
-  log('[mv-warm] V047 all manifest/map warm gates disabled; natural on-demand MV loading restored');
-  ctx.reportProgress?.('MV 엔진 마무리 중', 94, '선로딩 gate 없이 자연 로딩 사용');
+  log('[mv-warm] V048 all manifest/map warm gates disabled; natural on-demand MV loading restored');
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
   if (!g.Utils || g.Utils.RPGMAKER_NAME !== "MV") {
     throw new Error(`MV engine identity mismatch: ${g.Utils?.RPGMAKER_NAME ?? "missing"}`);
   }
   log(`[mv] core/plugins ready | version=${g.Utils.RPGMAKER_VERSION}`);
-  ctx.reportProgress?.('게임 시작 중', 98, `RPG Maker MV ${g.Utils.RPGMAKER_VERSION}`);
   dispatchWindowLoad(log);
 }
 

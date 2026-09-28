@@ -4,6 +4,11 @@
 
 ### English
 
+- V048 baseline recovery: removes V047's general startup progress renderer and script-load RAF yields from the active player path, restoring synchronous engine bootstrap timing. Progress callbacks remain only as dormant compiler plumbing for a future explicitly enabled compiler.
+- MV 0.48.0: keeps all warm manifest/map gates disabled, changes exact software PNG decoding from every semi-transparent PNG to indexed-color PNGs with semi-transparent tRNS entries only, preserving the proven Ghosthospital corruption fix while returning large GAME1 illustrations to the native decoder.
+- MV 0.48.0: releases the retained-scene presentation hold as soon as the new scene starts instead of waiting up to four seconds for global image readiness, and keeps the improved pressure policy that performs one hard-pressure GC episode while retaining the normal image-cache limit, with sparse emergency cleanup only at much higher growth.
+- MZ 0.48.0: disables both proactive event/map asset warm and battle effect/SE warm paths. MZ returns to on-demand loading while retaining save stability, decoded SE cache, font compatibility, damage bitmap cache and renderer fixes.
+- Pointer bridge: creates the offscreen PIXI cursor overlay before first pointer activity and moves right-stick/ZL/ZR gamepad polling to an independent 16 ms timer, leaving RAF responsible only for cursor overlay placement. This avoids first-frame render wake dependence and decouples MZ mouse input from engine/PIXI RAF scheduling.
 - MV 0.47.0: disables the remaining manual `.mvmz_warm` map-start gate entirely. Existing warm manifests are no longer used to preload pictures/faces or block Scene_Map; MV now returns to natural on-demand image loading to address GAME1 slowdown and illustration-loading crashes.
 - MV/MZ 0.47.0: adds an on-screen startup progress UI with the current phase, percentage bar, game name and engine. Script loading progress uses actual loaded-script counts; failure state is shown on screen instead of a silent black wait.
 - Future MV/MZ warm compilers now report real `map n/total` percentages to the same progress UI when those compiler paths are explicitly enabled again. Current V047 does not activate the warm compilers.
@@ -16,6 +21,11 @@
 
 ### 한국어
 
+- V048 기준선 복구: V047에서 추가했던 일반 부팅 진행 렌더러와 스크립트 로딩 중 RAF yield를 active player 경로에서 제거해 엔진 부팅 타이밍을 다시 동기 방식으로 복구했습니다. 진행률 callback은 향후 compiler를 명시적으로 다시 켤 때 사용할 비활성 연결부만 남깁니다.
+- MV 0.48.0: 모든 warm manifest/map gate 비활성 상태를 유지합니다. exact software PNG decode는 모든 반투명 PNG가 아니라 semi-transparent tRNS를 가진 indexed-color PNG에만 적용해 Ghosthospital에서 검증된 색상 복구는 유지하면서 GAME1의 대형 일러스트는 native decoder로 되돌렸습니다.
+- MV 0.48.0: retained scene hold를 전역 이미지 준비 완료까지 최대 4초 기다리지 않고 새 scene start 시점에 해제합니다. 메모리 압박도 정상 ImageCache 용량을 유지한 채 hard-pressure 진입 시 1회 정리하고, 훨씬 높은 메모리 증가에서만 드문 emergency 정리를 수행하는 정책을 유지합니다.
+- MZ 0.48.0: 이벤트/맵 proactive asset warm과 전투 effect/SE warm을 모두 active 경로에서 제거했습니다. 저장 안정화, decoded SE cache, 폰트 호환, damage bitmap cache, 렌더 수정은 유지하면서 이미지/효과는 on-demand 로딩으로 복귀합니다.
+- 포인터: 첫 입력 전부터 PIXI 커서 오버레이를 화면 밖에 생성하고, 우측 스틱/ZL/ZR gamepad polling을 독립 16ms timer로 분리했습니다. RAF는 커서 위치 갱신만 담당하므로 첫 화면이 포인터 생성에 의존하는 문제와 MZ의 RAF 상태에 따라 우스틱 마우스가 끊기는 문제를 분리합니다.
 - MV 0.47.0: 남아 있던 수동 `.mvmz_warm` 맵 시작 gate도 완전히 비활성화했습니다. 기존 manifest를 읽어 picture/face를 미리 몰아서 로드하거나 Scene_Map을 막지 않으며, GAME1의 느려짐과 일러스트 로딩 중 튕김을 줄이기 위해 자연 on-demand 이미지 로딩으로 복귀했습니다.
 - MV/MZ 0.47.0: 게임 시작 시 현재 단계, 퍼센트 게이지, 게임명, 엔진을 화면에 표시하는 진행 UI를 추가했습니다. 스크립트 로딩은 실제 로드 개수 기준으로 진행률을 표시하고, 시작 실패 시에도 블랙 화면 대신 실패 상태를 보여줍니다.
 - 향후 MV/MZ warm compiler를 명시적으로 다시 켤 경우 실제 `map n/total` 퍼센트를 같은 진행 UI에 전달하도록 준비했습니다. 현재 V047에서는 warm compiler 자체를 활성화하지 않습니다.

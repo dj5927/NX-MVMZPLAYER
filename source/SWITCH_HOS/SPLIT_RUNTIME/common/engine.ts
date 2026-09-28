@@ -7,7 +7,6 @@ import { installPointerBridge } from '../../UNIVERSAL_PLAYER/src/host/pointer';
 import { ScriptLoader } from '../../UNIVERSAL_PLAYER/src/host/scripts';
 import { installGameExitConfirmation } from '../../UNIVERSAL_PLAYER/src/host/exit_confirm';
 import { installNxPlusExitGuard } from '../../UNIVERSAL_PLAYER/src/host/plus_exit_guard';
-import { createBootProgressPresenter } from '../../UNIVERSAL_PLAYER/src/host/boot_progress';
 import { bootMv } from '../../UNIVERSAL_PLAYER/src/engine/mv';
 import { bootMz } from '../../UNIVERSAL_PLAYER/src/engine/mz';
 import type { EngineKind, GameInfo, RuntimeContext } from '../../UNIVERSAL_PLAYER/src/types';
@@ -89,21 +88,16 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   const game: GameInfo = { name, root: gameRoot, dataRoot, engine: expectedEngine, id };
   const rawGl = screen.getContext('webgl2');
   if (!rawGl) throw new Error('WebGL2 context creation failed');
-  const bootProgress = createBootProgressPresenter(rawGl, name, expectedEngine, log);
-  bootProgress.update('게임 준비 중', 5, `${expectedEngine} 런타임 초기화`);
   log('WebGL2 renderer=' + rawGl.getParameter(rawGl.RENDERER) + ' vendor=' + rawGl.getParameter(rawGl.VENDOR));
   logger.flush();
 
   const fs = new ResourceFS(dataRoot, log);
-  bootProgress.update('게임 준비 중', 12, '파일 시스템 연결');
   const dom = installDomCompat(rawGl, log);
-  bootProgress.update('호환 계층 초기화 중', 18, 'DOM / WebGL 호환 준비');
   const g: any = globalThis as any;
   installPointerBridge(log);
   const NativeXHR = g.XMLHttpRequest;
   g.XMLHttpRequest = makeFileXMLHttpRequest(fs, log, NativeXHR);
   installImagePathBridge(fs, log);
-  bootProgress.update('호환 계층 초기화 중', 24, '이미지 / XHR 브리지 준비');
   log('[split-init] image path bridge ready');
   logger.flush();
   g.location.href = dataRoot + '/index.html';
@@ -112,7 +106,6 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   logger.flush();
 
   const scripts = new ScriptLoader(fs, log, expectedEngine === 'MV' ? 'mv-batch' : 'legacy');
-  bootProgress.update('스크립트 로더 준비 중', 30, expectedEngine === 'MV' ? 'MV classic script mode' : 'MZ legacy script mode');
   log(`[split-init] script loader ready | mode=${expectedEngine === 'MV' ? 'mv-batch' : 'legacy'}`);
   logger.flush();
   const ctx: RuntimeContext = {
@@ -125,8 +118,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
     flushLog: () => logger.flush(),
     mvWarmBudgetMP: expectedEngine === 'MV' ? 6 : undefined,
     mvWarmMaxAssets: expectedEngine === 'MV' ? 8 : undefined,
-    mvWarmBackgroundMax: expectedEngine === 'MV' ? 0 : undefined,
-    reportProgress: (label: string, percent?: number, detail?: string) => bootProgress.update(label, percent, detail)
+    mvWarmBackgroundMax: expectedEngine === 'MV' ? 0 : undefined
   };
   logger.flush();
 
@@ -136,16 +128,10 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   } catch {}
   log(`[split-init] boot ${expectedEngine} enter`);
   logger.flush();
-  try {
-    if (expectedEngine === 'MV') await bootMv(ctx, scripts);
-    else await bootMz(ctx, scripts);
-  } catch (error) {
-    bootProgress.update('게임 시작 실패', undefined, String((error as any)?.message ?? error));
-    throw error;
-  }
+  if (expectedEngine === 'MV') await bootMv(ctx, scripts);
+  else await bootMz(ctx, scripts);
   log(`[split-init] boot ${expectedEngine} returned`);
   logger.flush();
-  bootProgress.dispose();
 
   log('CONTROLS | B=OK A=Cancel X=Menu L=PageUp R=PageDown RightStick=Mouse ZL=LeftClick ZR=RightClick Touch=Mouse Start+Select=ExitConfirm');
   logger.flush();
@@ -164,6 +150,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   let lastFrameCount = Number(g.Graphics?.frameCount ?? 0);
   let lastFpsTime = Date.now();
   let lastForcedGc = 0;
+  let lastHardGcUsed = 0;
   let mvPressureMode = 'normal';
   setInterval(() => {
     const now = Date.now();
@@ -195,19 +182,23 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
       const ratio = total > 0 ? used / total : 0;
       if (expectedEngine === 'MV') {
         const softHighWater = 850 * 1024 * 1024;
-        const hardHighWater = 1000 * 1024 * 1024;
+        const hardHighWater = 1050 * 1024 * 1024;
+        const emergencyHighWater = 1450 * 1024 * 1024;
         const recoverWater = 750 * 1024 * 1024;
         const baseLimit = Number(g.__mvmzMvBaseImageCacheLimit || g.ImageCache?.limit || 0);
-        const hardLimit = baseLimit > 0 ? Math.min(baseLimit, 10 * 1e6) : 10 * 1e6;
-        if ((used >= hardHighWater || ratio >= 0.35) && now - lastForcedGc >= 4000) {
+        if ((used >= hardHighWater || ratio >= 0.38) && mvPressureMode !== 'hard') {
           lastForcedGc = now;
-          if (g.ImageCache && Number(g.ImageCache.limit || 0) !== hardLimit) {
-            const oldLimit = Number(g.ImageCache.limit || 0);
-            g.ImageCache.limit = hardLimit;
-            log(`[mem] MV HARD pressure cache cap -> ${(hardLimit / 1e6).toFixed(0)}MP (old=${(oldLimit / 1e6).toFixed(1)}MP)`);
-          }
+          lastHardGcUsed = used;
           mvPressureMode = 'hard';
-          log(`[mem] MV HARD pressure usedMiB=${(used / 1048576).toFixed(1)} ratio=${(ratio * 100).toFixed(1)}% -> trim + textureGC + V8 GC`);
+          log(`[mem] MV HARD pressure entry usedMiB=${(used / 1048576).toFixed(1)} ratio=${(ratio * 100).toFixed(1)}% -> one-shot trim + textureGC + V8 GC (cache retained ${(baseLimit / 1e6).toFixed(0)}MP)`);
+          try { g.ImageManager?._imageCache?._truncateCache?.(); } catch {}
+          try { g.Graphics?.callGC?.(); } catch {}
+          try { if (typeof g.gc === 'function') g.gc(); } catch {}
+          try { logger.flush(); } catch {}
+        } else if (mvPressureMode === 'hard' && used >= emergencyHighWater && used >= lastHardGcUsed + 192 * 1024 * 1024 && now - lastForcedGc >= 12000) {
+          lastForcedGc = now;
+          lastHardGcUsed = used;
+          log(`[mem] MV emergency pressure usedMiB=${(used / 1048576).toFixed(1)} ratio=${(ratio * 100).toFixed(1)}% -> sparse trim + textureGC + V8 GC`);
           try { g.ImageManager?._imageCache?._truncateCache?.(); } catch {}
           try { g.Graphics?.callGC?.(); } catch {}
           try { if (typeof g.gc === 'function') g.gc(); } catch {}
@@ -220,11 +211,10 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
           try { if (typeof g.gc === 'function') g.gc(); } catch {}
           try { logger.flush(); } catch {}
         } else if (used <= recoverWater && mvPressureMode !== 'normal') {
-          if (g.ImageCache && baseLimit > 0 && Number(g.ImageCache.limit || 0) !== baseLimit) {
-            g.ImageCache.limit = baseLimit;
-            log(`[mem] MV recovered usedMiB=${(used / 1048576).toFixed(1)} -> cache restored ${(baseLimit / 1e6).toFixed(0)}MP`);
-          }
+          if (g.ImageCache && baseLimit > 0) g.ImageCache.limit = baseLimit;
+          log(`[mem] MV recovered usedMiB=${(used / 1048576).toFixed(1)} -> pressure episode reset`);
           mvPressureMode = 'normal';
+          lastHardGcUsed = 0;
         }
       } else if (ratio >= 0.65 && now - lastForcedGc >= 5000) {
         lastForcedGc = now;
