@@ -65,23 +65,23 @@ jobs:
           cp source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER/mvmz-mv-player.nro switch/mvmzplayer/runtime/MVMZ_MV_Player.nro
           cp source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER/mvmz-mz-player.nro switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro
 
-          cat > mvmz/HERE_GAME_FOLDER.txt <<'EOF'
-NX-MVMZPLAYER GAME FOLDER
-
-[한국어]
-이 mvmz 폴더 안에 본인이 보유한 RPG Maker MV/MZ 게임 폴더를 넣으세요.
-
-예시:
-mvmz/MyGame/
-mvmz/AnotherGame/
-
-[English]
-Place your RPG Maker MV/MZ game folders inside this mvmz folder.
-
-Example:
-mvmz/MyGame/
-mvmz/AnotherGame/
-EOF
+          printf '%s\n' \
+            'NX-MVMZPLAYER GAME FOLDER' \
+            '' \
+            '[한국어]' \
+            '이 mvmz 폴더 안에 본인이 보유한 RPG Maker MV/MZ 게임 폴더를 넣으세요.' \
+            '' \
+            '예시:' \
+            'mvmz/MyGame/' \
+            'mvmz/AnotherGame/' \
+            '' \
+            '[English]' \
+            'Place your RPG Maker MV/MZ game folders inside this mvmz folder.' \
+            '' \
+            'Example:' \
+            'mvmz/MyGame/' \
+            'mvmz/AnotherGame/' \
+            > mvmz/HERE_GAME_FOLDER.txt
 
           cp README_KR.md switch/mvmzplayer/README_KR.md
           cp README_EN.md switch/mvmzplayer/README_EN.md
