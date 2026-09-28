@@ -1,3 +1,11 @@
+## 2026-09-29 - V058 diagnostic candidate
+
+- Keep SPLIT_V052 as stable baseline; V057 preemptive-light-reclaim experiment is device rejected.
+- Remove the garun_windows 1024 MiB preemptive memory rule while retaining the external `_compat` architecture.
+- Add garun-scoped NativeVideo/BGM play resolution and 0.5/1.5/3.0 second currentTime diagnostics.
+- Stop forcing synchronous SD log flushes for successful stream-ready/battle/save lifecycle trace messages; failure paths still flush immediately.
+- Bump split MV/MZ players to 0.58.0. Public release remains unchanged.
+
 # Changelog / 변경 사항
 
 ## Unreleased

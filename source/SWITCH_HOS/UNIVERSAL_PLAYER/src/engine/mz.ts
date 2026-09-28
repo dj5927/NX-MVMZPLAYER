@@ -528,10 +528,10 @@ function installMZBattleLifecycleDiagnostics(ctx: RuntimeContext) {
   if (battleProto && typeof battleProto.stop === 'function') {
     const originalStop = battleProto.stop;
     battleProto.stop = function(...args: any[]) {
-      critical(`[mz-battle] Scene_Battle.stop begin | next=${sceneName(g.SceneManager?._nextScene)}`);
+      ctx.log(`[mz-battle] Scene_Battle.stop begin | next=${sceneName(g.SceneManager?._nextScene)}`);
       try {
         const result = originalStop.apply(this, args);
-        critical('[mz-battle] Scene_Battle.stop end');
+        ctx.log('[mz-battle] Scene_Battle.stop end');
         return result;
       } catch (error) {
         critical(`[mz-battle] Scene_Battle.stop FAILED | ${String((error as any)?.stack ?? error)}`);
@@ -542,10 +542,10 @@ function installMZBattleLifecycleDiagnostics(ctx: RuntimeContext) {
   if (battleProto && typeof battleProto.terminate === 'function') {
     const originalTerminate = battleProto.terminate;
     battleProto.terminate = function(...args: any[]) {
-      critical(`[mz-battle] Scene_Battle.terminate begin | next=${sceneName(g.SceneManager?._nextScene)} autosave=${String(this.shouldAutosave?.())}`);
+      ctx.log(`[mz-battle] Scene_Battle.terminate begin | next=${sceneName(g.SceneManager?._nextScene)} autosave=${String(this.shouldAutosave?.())}`);
       try {
         const result = originalTerminate.apply(this, args);
-        critical('[mz-battle] Scene_Battle.terminate end');
+        ctx.log('[mz-battle] Scene_Battle.terminate end');
         return result;
       } catch (error) {
         critical(`[mz-battle] Scene_Battle.terminate FAILED | ${String((error as any)?.stack ?? error)}`);
@@ -558,10 +558,10 @@ function installMZBattleLifecycleDiagnostics(ctx: RuntimeContext) {
   if (baseProto && typeof baseProto.executeAutosave === 'function' && !baseProto.executeAutosave.__mvmzTrace) {
     const originalAutosave = baseProto.executeAutosave;
     const wrappedAutosave = function(this: any, ...args: any[]) {
-      critical(`[mz-battle] autosave dispatch begin | scene=${sceneName(this)}`);
+      ctx.log(`[mz-battle] autosave dispatch begin | scene=${sceneName(this)}`);
       try {
         const result = originalAutosave.apply(this, args);
-        critical(`[mz-battle] autosave dispatch end | scene=${sceneName(this)}`);
+        ctx.log(`[mz-battle] autosave dispatch end | scene=${sceneName(this)}`);
         return result;
       } catch (error) {
         critical(`[mz-battle] autosave dispatch FAILED | ${String((error as any)?.stack ?? error)}`);
@@ -576,11 +576,11 @@ function installMZBattleLifecycleDiagnostics(ctx: RuntimeContext) {
   if (dm && typeof dm.saveGame === 'function' && !dm.saveGame.__mvmzTrace) {
     const originalSaveGame = dm.saveGame;
     const wrappedSaveGame = function(this: any, savefileId: any, ...args: any[]) {
-      critical(`[mz-battle] DataManager.saveGame begin | id=${String(savefileId)}`);
+      ctx.log(`[mz-battle] DataManager.saveGame begin | id=${String(savefileId)}`);
       try {
         const value = originalSaveGame.call(this, savefileId, ...args);
         return Promise.resolve(value).then(
-          result => { critical(`[mz-battle] DataManager.saveGame resolved | id=${String(savefileId)}`); return result; },
+          result => { ctx.log(`[mz-battle] DataManager.saveGame resolved | id=${String(savefileId)}`); return result; },
           error => { critical(`[mz-battle] DataManager.saveGame rejected | id=${String(savefileId)} | ${String((error as any)?.stack ?? error)}`); throw error; }
         );
       } catch (error) {
@@ -596,10 +596,10 @@ function installMZBattleLifecycleDiagnostics(ctx: RuntimeContext) {
   if (audio && typeof audio.stopMe === 'function' && !audio.stopMe.__mvmzTrace) {
     const originalStopMe = audio.stopMe;
     const wrappedStopMe = function(this: any, ...args: any[]) {
-      critical(`[mz-battle] AudioManager.stopMe begin | hasMe=${!!this._meBuffer}`);
+      ctx.log(`[mz-battle] AudioManager.stopMe begin | hasMe=${!!this._meBuffer}`);
       try {
         const result = originalStopMe.apply(this, args);
-        critical(`[mz-battle] AudioManager.stopMe end | hasMe=${!!this._meBuffer}`);
+        ctx.log(`[mz-battle] AudioManager.stopMe end | hasMe=${!!this._meBuffer}`);
         return result;
       } catch (error) {
         critical(`[mz-battle] AudioManager.stopMe FAILED | ${String((error as any)?.stack ?? error)}`);

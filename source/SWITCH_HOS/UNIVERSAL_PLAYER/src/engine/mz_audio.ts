@@ -18,6 +18,13 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
   const streamThreshold = 1024 * 1024;
   const seCacheMaxBytes = 48 * 1024 * 1024;
   const seCacheMaxEntries = 96;
+  const streamDiag = !!g.__mvmzCompatApi?.config?.mzAudio?.streamLifecycleDiagnostics;
+  const streamDiagSamples = Array.isArray(g.__mvmzCompatApi?.config?.mzAudio?.progressSamplesMs)
+    ? g.__mvmzCompatApi.config.mzAudio.progressSamplesMs
+        .map((value: any) => Math.max(100, Number(value || 0)))
+        .filter((value: number) => Number.isFinite(value) && value > 0)
+        .slice(0, 6)
+    : [500, 1500, 3000];
   const seDecodeCache = new Map<string, any>();
   let seCacheBytes = 0;
   let seCacheLogCount = 0;
@@ -176,6 +183,31 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
     } catch {}
   };
 
+  const streamState = (media: any) => {
+    if (!media) return 'media=none';
+    let paused = 'na';
+    let currentTime = 'na';
+    let readyState = 'na';
+    let ended = 'na';
+    try { paused = String(!!media.paused); } catch {}
+    try { currentTime = Number(media.currentTime || 0).toFixed(3); } catch {}
+    try { readyState = String(media.readyState ?? 'na'); } catch {}
+    try { ended = String(!!media.ended); } catch {}
+    return 'paused=' + paused + ' currentTime=' + currentTime + ' readyState=' + readyState + ' ended=' + ended;
+  };
+
+  const scheduleStreamProgressDiagnostics = (owner: any, media: any) => {
+    if (!streamDiag || !media) return;
+    for (const delay of streamDiagSamples) {
+      try {
+        setTimeout(() => {
+          if (owner.__mvmzStream !== media || !owner.__mvmzStreamMode) return;
+          ctx.log('[mz-audio] stream progress +' + delay + 'ms | url=' + String(owner._url || '') + ' playing=' + String(!!owner._isPlaying) + ' ' + streamState(media));
+        }, delay);
+      } catch {}
+    }
+  };
+
   const startStreamingFallback = (owner: any, arrayBuffer: ArrayBuffer, reason: any) => {
     if (typeof NativeVideo !== 'function') return false;
     try {
@@ -219,7 +251,7 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
           owner._loopLengthTime = owner._totalTime;
         }
         applyStreamParams(owner);
-        critical(`[mz-audio] stream ready | url=${String(owner._url || '')} duration=${Number(media.duration || 0).toFixed(3)} loopStart=${Number(owner._loopStartTime || 0).toFixed(3)} loopLength=${Number(owner._loopLengthTime || 0).toFixed(3)}`);
+        ctx.log(`[mz-audio] stream ready | url=${String(owner._url || '')} duration=${Number(media.duration || 0).toFixed(3)} loopStart=${Number(owner._loopStartTime || 0).toFixed(3)} loopLength=${Number(owner._loopLengthTime || 0).toFixed(3)}`);
         owner._onLoad?.();
       };
       media.onerror = (event: any) => {
@@ -331,13 +363,22 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
     try { if (startOffset > 0) media.currentTime = startOffset; } catch {}
     this._startTime = WebAudio._currentTime() - startOffset / Number(this._pitch || 1);
     applyStreamParams(this);
-    Promise.resolve(media.play()).catch((error: any) => {
+    if (streamDiag) {
+      ctx.log('[mz-audio] stream play call | url=' + String(this._url || '') + ' loop=' + String(!!loop) + ' offset=' + startOffset.toFixed(3) + ' ' + streamState(media));
+    }
+    Promise.resolve(media.play()).then(() => {
+      if (streamDiag) {
+        ctx.log('[mz-audio] stream play resolved | url=' + String(this._url || '') + ' ' + streamState(media));
+        scheduleStreamProgressDiagnostics(this, media);
+      }
+    }).catch((error: any) => {
       this.__mvmzStreamError = true;
       critical(`[mz-audio] stream play FAILED | url=${String(this._url || '')} | ${String(error?.stack ?? error)}`);
     });
   };
   proto.stop = function() {
     if (!this.__mvmzStreamMode) return originalStop.call(this);
+    if (streamDiag) ctx.log('[mz-audio] stream stop | url=' + String(this._url || '') + ' ' + streamState(this.__mvmzStream));
     try { this.__mvmzStream?.pause?.(); } catch {}
     this._isPlaying = false;
     this._loadListeners = [];
@@ -369,6 +410,7 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
   };
   proto.fadeOut = function(duration: number) {
     if (!this.__mvmzStreamMode) return originalFadeOut.call(this, duration);
+    if (streamDiag) ctx.log('[mz-audio] stream fadeOut | url=' + String(this._url || '') + ' duration=' + Number(duration || 0).toFixed(3) + ' ' + streamState(this.__mvmzStream));
     try { if (this.__mvmzStream) this.__mvmzStream.volume = 0; } catch {}
     this._isPlaying = false;
     this._loadListeners = [];
@@ -398,5 +440,5 @@ export function installMZAudioCompat(ctx: RuntimeContext) {
       configurable: true
     });
   }
-  ctx.log(`[mz-audio] compatibility installed | nativeVideo=${typeof NativeVideo} streamThreshold=${streamThreshold} seCacheMiB=${seCacheMaxBytes / 1048576} seCacheEntries=${seCacheMaxEntries}`);
+  ctx.log(`[mz-audio] compatibility installed | nativeVideo=${typeof NativeVideo} streamThreshold=${streamThreshold} seCacheMiB=${seCacheMaxBytes / 1048576} seCacheEntries=${seCacheMaxEntries} streamDiag=${streamDiag ? 'on' : 'off'}`);
 }

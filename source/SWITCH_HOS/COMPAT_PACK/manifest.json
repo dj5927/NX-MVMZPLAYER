@@ -2,7 +2,7 @@
   "version": 1,
   "rules": [
     {
-      "id": "game.garun_windows.mz.memory.v057",
+      "id": "game.garun_windows.mz.audio_diag.v058",
       "enabled": true,
       "priority": 1000,
       "match": {
@@ -14,19 +14,14 @@
         ]
       },
       "settings": {
-        "mzMemory": {
-          "profile": "garun_windows-v057",
-          "preemptiveWaterMiB": 1024,
-          "fullWaterMiB": 1280,
-          "preemptiveTransitions": [
-            "Scene_Map->Scene_Map",
-            "Scene_Battle->Scene_Map"
-          ]
+        "mzAudio": {
+          "streamLifecycleDiagnostics": true,
+          "progressSamplesMs": [500, 1500, 3000]
         }
       },
       "scripts": {
         "post_plugins": [
-          "scripts/games/garun_windows_memory.js"
+          "scripts/games/garun_windows_audio_diag.js"
         ]
       }
     }
