@@ -1,6 +1,6 @@
 import { RuntimeLogger } from '../../../UNIVERSAL_PLAYER/src/host/log';
 import { scanGames } from '../../../UNIVERSAL_PLAYER/src/host/discovery';
-import { selectGame } from '../../../UNIVERSAL_PLAYER/src/launcher';
+import { prepareLauncherCatalog, selectGame } from '../../../UNIVERSAL_PLAYER/src/launcher';
 
 const ROOT = 'sdmc:/mvmz';
 const LOG_ROOT = ROOT + '/_logs';
@@ -17,19 +17,20 @@ async function main() {
   Switch.mkdirSync(RUNTIME_ROOT);
   const logger = new RuntimeLogger(`${LOG_ROOT}/launcher.log`);
   const log = logger.log;
-  log('MVMZ Split Launcher v0.4.0 starting');
+  log('MVMZ Split Launcher v0.5.0 starting');
   log('argv=' + JSON.stringify(Switch.argv));
   logger.flush();
 
   const games = scanGames(ROOT, log);
   for (const game of games) log(`Detected game: ${game.name} | engine=${game.engine} | dataRoot=${game.dataRoot}`);
+  const catalog = prepareLauncherCatalog(ROOT, games, log);
   if (!games.length) throw new Error(`No MV/MZ games found under ${ROOT}`);
 
   const rawGl = screen.getContext('webgl2');
   if (!rawGl) throw new Error('WebGL2 context creation failed');
   log('WebGL2 renderer=' + rawGl.getParameter(rawGl.RENDERER) + ' vendor=' + rawGl.getParameter(rawGl.VENDOR));
 
-  const game = await selectGame(rawGl, games, log);
+  const game = await selectGame(rawGl, games, log, catalog);
   const suiteDir = dirname(String(Switch.argv[0] || 'sdmc:/switch/MVMZ_HOS/MVMZ_Launcher.nro'));
   const targetName = game.engine === 'MV' ? 'MVMZ_MV_Player.nro' : 'MVMZ_MZ_Player.nro';
   const target = `${suiteDir}/runtime/${targetName}`;
