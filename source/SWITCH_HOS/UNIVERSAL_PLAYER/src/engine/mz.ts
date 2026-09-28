@@ -1642,12 +1642,23 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   if (!sources.length) throw new Error('MZ index.html has no external scripts');
   log(`[mz] index scripts=${sources.length} | ${sources.join(', ')}`);
 
-  for (const source of sources) {
+  ctx.reportProgress?.('MZ 스크립트 로딩 중', 34, `0/${sources.length}`);
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+    const source = sources[sourceIndex];
     if (!fs.exists(source)) throw new Error(`MZ script missing: ${source}`);
     scripts.loadNow(source, false, undefined, document);
+    const progress = 34 + Math.round(((sourceIndex + 1) / sources.length) * 40);
+    ctx.reportProgress?.('MZ 스크립트 로딩 중', progress, `${sourceIndex + 1}/${sources.length}  ${source}`);
+    if ((sourceIndex + 1) % 4 === 0 || sourceIndex + 1 === sources.length) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }
   }
 
+  ctx.reportProgress?.('MZ 플러그인 초기화 중', 78, '동적 플러그인 처리');
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   await scripts.drain();
+  ctx.reportProgress?.('MZ 호환 기능 적용 중', 86, '폰트 / 저장 / 이미지 / 전투 캐시');
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   const g: any = globalThis as any;
   if (g.Utils && g.Utils.RPGMAKER_NAME && g.Utils.RPGMAKER_NAME !== 'MZ') {
     throw new Error(`MZ engine identity mismatch: ${g.Utils.RPGMAKER_NAME}`);
@@ -1658,8 +1669,9 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   installMZDamageBitmapCache(ctx);
   installMZEventAssetPrewarm(ctx);
   installMZBattlePrewarm(ctx);
-  log('[mz-warm] V046 manifest compiler/gate disabled; V041 nonblocking event/battle prewarm restored');
+  log('[mz-warm] V047 manifest compiler/gate remains disabled; V041 nonblocking event/battle prewarm retained');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
+  ctx.reportProgress?.('게임 시작 중', 98, `RPG Maker MZ ${g.Utils?.RPGMAKER_VERSION ?? ''}`);
   dispatchWindowLoad(log);
 }
