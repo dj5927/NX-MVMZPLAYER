@@ -1,3 +1,12 @@
+## 2026-09-29 - V059 folder-independent compatibility identity
+
+- Keep V058 runtime behavior; V059 changes compatibility routing only.
+- Official `_compat` rules no longer depend on install folder/gameId/gameName.
+- Add content selectors: plugin count, raw plugin fingerprint, active plugin-set fingerprint, core fingerprint, relative file presence and optional file fingerprints.
+- garun now matches MZ + 95 active plugins + pluginSetFp `9471eac6` + distinctive plugin presence/files, regardless of folder name.
+- Remove obsolete V057/V058 garun compatibility scripts; keep only `garun_audio_diag.js`.
+- Bump split MV/MZ players to 0.59.0. Public release remains unchanged.
+
 ## 2026-09-29 - V058 diagnostic candidate
 
 - Keep SPLIT_V052 as stable baseline; V057 preemptive-light-reclaim experiment is device rejected.

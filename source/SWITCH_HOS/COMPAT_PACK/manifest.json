@@ -2,15 +2,20 @@
   "version": 1,
   "rules": [
     {
-      "id": "game.garun_windows.mz.audio_diag.v058",
+      "id": "game.garun.mz.audio_diag.v059",
       "enabled": true,
       "priority": 1000,
       "match": {
         "engine": "MZ",
-        "gameId": "garun_windows",
+        "pluginCount": 95,
+        "pluginSetFingerprint": "9471eac6",
         "pluginsAll": [
           "TMPreloadEx",
           "pura_NonFieldDungeon"
+        ],
+        "filesAll": [
+          "js/plugins/TMPreloadEx.js",
+          "js/plugins/pura_NonFieldDungeon.js"
         ]
       },
       "settings": {
@@ -21,7 +26,7 @@
       },
       "scripts": {
         "post_plugins": [
-          "scripts/games/garun_windows_audio_diag.js"
+          "scripts/games/garun_audio_diag.js"
         ]
       }
     }

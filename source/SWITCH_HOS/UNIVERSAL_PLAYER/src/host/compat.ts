@@ -5,9 +5,16 @@ type CompatMatch = {
   engine?: EngineKind;
   gameId?: string;
   gameName?: string;
+  pluginCount?: number;
   pluginsAll?: string[];
   pluginsAny?: string[];
   pluginsNone?: string[];
+  pluginsFingerprint?: string | string[];
+  pluginSetFingerprint?: string | string[];
+  coreFingerprint?: string | string[];
+  filesAll?: string[];
+  filesAny?: string[];
+  fileFingerprints?: Record<string, string | string[]>;
 };
 
 type CompatRule = {
@@ -32,6 +39,7 @@ export type CompatProfile = {
   gameName: string;
   pluginNames: string[];
   pluginsFingerprint: string;
+  pluginSetFingerprint: string;
   coreFingerprint: string;
 };
 
@@ -60,6 +68,16 @@ function fnv1a(text: string) {
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
+}
+
+function fingerprintMatches(actual: string, expected?: string | string[]) {
+  if (expected == null) return true;
+  const values = Array.isArray(expected) ? expected : [expected];
+  return values.some(value => normalizeName(value) === normalizeName(actual));
+}
+
+function normalizeRelativePath(path: string) {
+  return String(path || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\.\.(?:\/|$)/g, '');
 }
 
 function deepMerge(target: any, source: any) {
@@ -94,15 +112,32 @@ function parsePluginNames(source: string) {
   }
 }
 
-function matchesRule(rule: CompatRule, profile: CompatProfile) {
+function matchesRule(rule: CompatRule, profile: CompatProfile, dataRoot: string, fileFingerprintCache: Map<string, string>) {
   const match = rule.match || {};
   if (match.engine && match.engine !== profile.engine) return false;
   if (match.gameId && normalizeName(match.gameId) !== normalizeName(profile.gameId)) return false;
   if (match.gameName && normalizeName(match.gameName) !== normalizeName(profile.gameName)) return false;
+  if (match.pluginCount != null && Number(match.pluginCount) !== profile.pluginNames.length) return false;
+  if (!fingerprintMatches(profile.pluginsFingerprint, match.pluginsFingerprint)) return false;
+  if (!fingerprintMatches(profile.pluginSetFingerprint, match.pluginSetFingerprint)) return false;
+  if (!fingerprintMatches(profile.coreFingerprint, match.coreFingerprint)) return false;
   const plugins = new Set(profile.pluginNames.map(normalizeName));
   if (match.pluginsAll?.some(name => !plugins.has(normalizeName(name)))) return false;
   if (match.pluginsAny?.length && !match.pluginsAny.some(name => plugins.has(normalizeName(name)))) return false;
   if (match.pluginsNone?.some(name => plugins.has(normalizeName(name)))) return false;
+  const hasRelative = (relative: string) => exists(`${dataRoot}/${normalizeRelativePath(relative)}`);
+  if (match.filesAll?.some(relative => !hasRelative(relative))) return false;
+  if (match.filesAny?.length && !match.filesAny.some(relative => hasRelative(relative))) return false;
+  for (const [relativeRaw, expected] of Object.entries(match.fileFingerprints || {})) {
+    const relative = normalizeRelativePath(relativeRaw);
+    let actual = fileFingerprintCache.get(relative);
+    if (!actual) {
+      try { actual = fnv1a(readTextAbsolute(`${dataRoot}/${relative}`)); }
+      catch { return false; }
+      fileFingerprintCache.set(relative, actual);
+    }
+    if (!fingerprintMatches(actual, expected)) return false;
+  }
   return true;
 }
 
@@ -122,12 +157,14 @@ export class CompatManager {
       coreSource = readTextAbsolute(`${game.dataRoot}/${core}`);
     } catch {}
     const pluginNames = parsePluginNames(pluginsSource);
+    const pluginSetSource = pluginNames.map(normalizeName).sort().join('\n');
     this.profile = {
       engine: game.engine,
       gameId: game.id,
       gameName: game.name,
       pluginNames,
       pluginsFingerprint: fnv1a(pluginsSource),
+      pluginSetFingerprint: fnv1a(pluginSetSource),
       coreFingerprint: fnv1a(coreSource)
     };
 
@@ -148,7 +185,14 @@ export class CompatManager {
       }
     }
 
-    for (const rule of byId.values()) if (matchesRule(rule, this.profile)) this.matchedRules.push(rule);
+    const fileFingerprintCache = new Map<string, string>();
+    for (const rule of byId.values()) {
+      const match = rule.match || {};
+      if (match.gameId || match.gameName) {
+        this.log(`[compat] legacy folder/display-name selector present | rule=${rule.id}`);
+      }
+      if (matchesRule(rule, this.profile, game.dataRoot, fileFingerprintCache)) this.matchedRules.push(rule);
+    }
     this.matchedRules.sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
     for (const rule of this.matchedRules) deepMerge(this.config, rule.settings || {});
 
@@ -159,7 +203,7 @@ export class CompatManager {
       config: this.config,
       log: (message: any) => this.log(`[compat-script] ${String(message)}`)
     };
-    this.log(`[compat] scan | engine=${game.engine} gameId=${game.id} plugins=${pluginNames.length} coreFp=${this.profile.coreFingerprint} pluginsFp=${this.profile.pluginsFingerprint}`);
+    this.log(`[compat] scan | engine=${game.engine} folderId=${game.id} plugins=${pluginNames.length} coreFp=${this.profile.coreFingerprint} pluginsFp=${this.profile.pluginsFingerprint} pluginSetFp=${this.profile.pluginSetFingerprint}`);
     this.log(`[compat] matched | count=${this.matchedRules.length} ids=${this.matchedRules.map(rule => rule.id).join(',') || 'none'}`);
   }
 
