@@ -1,0 +1,11 @@
+node_modules/
+*.nro
+*.zip
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+release/
+**/romfs/main.js
+**/romfs/main.js.map
