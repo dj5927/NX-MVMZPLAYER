@@ -272,4 +272,28 @@ export type DomCompat={document:DocumentShim;gl:any;glStats:CompatStats;createCa
 export function installDomCompat(rawGl:WebGL2RenderingContext,log:LogFn):DomCompat{
   const g=globalThis as AnyRecord; const {gl,stats}=createWebGL1Compat(rawGl,log); const provider=()=>gl; const document=new DocumentShim(provider); const events=new EventTarget();
   installTextDecoderCompat(g,log);
-  g.window=g; g.self=g; g.global=g; g.document=document; g.innerWidth=screen.width; g.innerHei
+  g.window=g; g.self=g; g.global=g; g.document=document; g.innerWidth=screen.width; g.innerHeight=screen.height; g.outerWidth=screen.width; g.outerHeight=screen.height; g.screenX=0; g.screenY=0; g.devicePixelRatio=1; g.WebGLRenderingContext=g.WebGLRenderingContext||function(){}; g.WebGL2RenderingContext=g.WebGL2RenderingContext||function(){}; g.HTMLCanvasElement=CanvasShim; g.HTMLElement=ElementShim; g.HTMLImageElement=g.HTMLImageElement||g.Image; g.HTMLVideoElement=MediaElementShim; g.HTMLAudioElement=MediaElementShim; g.Worker=g.Worker||WorkerShim; if(g.fonts)(document as any).fonts=g.fonts;
+  log(`[dom] image element compatibility | Image=${typeof g.Image} HTMLImageElement=${typeof g.HTMLImageElement}`);
+  g.location=g.location||{href:'sdmc:/switch/MVMZ_Player/',protocol:'sdmc:',hostname:'',port:'',pathname:'/switch/MVMZ_Player/',search:'',hash:''};
+  if(typeof g.addEventListener!=='function'){g.addEventListener=events.addEventListener.bind(events);g.removeEventListener=events.removeEventListener.bind(events);g.dispatchEvent=events.dispatchEvent.bind(events);}
+  // Desktop/NW.js plugins often try to center or resize the host OS window.
+  // HOS has a fixed fullscreen surface, so keep browser-compatible methods
+  // available while intentionally ignoring geometry changes.
+  g.moveBy=g.moveBy||((_x:number,_y:number)=>{});
+  g.moveTo=g.moveTo||((_x:number,_y:number)=>{});
+  g.resizeBy=g.resizeBy||((_w:number,_h:number)=>{});
+  g.resizeTo=g.resizeTo||((_w:number,_h:number)=>{});
+  g.focus=g.focus||(()=>{});
+  g.blur=g.blur||(()=>{});
+  // Never let browser/NW.js compatibility calls terminate the HOS process.
+  // App exit is owned by the host-level Plus+Minus chord in main.ts.
+  g.close=()=>{ log('[dom] window.close ignored; use Plus+Minus to exit'); };
+  g.open=g.open||((_url?:string,target?:string)=>{
+    if(String(target||'').toLowerCase()==='_self'){
+      return {closed:false,focus(){},close(){log('[dom] _self.close ignored; use Plus+Minus to exit');}};
+    }
+    return {closed:false,focus(){},blur(){},moveBy(){},moveTo(){},resizeBy(){},resizeTo(){},close(){this.closed=true;}};
+  });
+  log(`[dom] shim installed | viewport=${screen.width}x${screen.height}`);
+  return {document,gl,glStats:stats,createCanvas(w:number,h:number){const c=new CanvasShim(provider);c.width=w;c.height=h;return c;}};
+}
