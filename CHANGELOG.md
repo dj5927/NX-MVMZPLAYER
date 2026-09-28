@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- V056 isolated candidate: V055 ResourceFS resolved-path caching is rejected after garun_windows booted but terminated without JS FATAL on a dungeon Scene_Map -> Scene_Map transfer. V056 restores ResourceFS exactly to V052 and changes only GL diagnostic trace budgeting.
+- V056 GL tracing now consumes its budget on every traced GL call, not only calls that report an error, so error-free traces stop after the configured call budget instead of paying indefinite gl.getError() overhead.
+
 - V055 isolated candidate: V052 is re-established as the locked stable baseline after V053/V054 device rejection. V055 reintroduces only successful ResourceFS path-resolution caching while preserving synchronous Switch.readFileSync I/O and all V052 bootstrap/image semantics.
 - V055 intentionally excludes the V053 async local XHR/fetch/Image path, MZ lazy Canvas/TextureGC changes, and cache-eviction rewrite. Future optimizations remain one functional change per device-tested build.
 

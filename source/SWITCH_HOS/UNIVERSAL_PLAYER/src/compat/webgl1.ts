@@ -429,6 +429,11 @@ export function createWebGL1Compat(raw: WebGL2RenderingContext, log: LogFn) {
   const callWithGlTrace = (target: any, name: string, fn: (...args: any[]) => any, args: any[]) => {
     const g: any = globalThis as any;
     if (!g.__mvmzGlErrorTraceEnabled) return fn(...args);
+    const budget = Math.max(0, Number(g.__mvmzGlErrorTraceBudget ?? 0));
+    if (budget <= 0) {
+      g.__mvmzGlErrorTraceEnabled = false;
+      return fn(...args);
+    }
     let result: any;
     let thrown: any = null;
     try {
@@ -437,14 +442,13 @@ export function createWebGL1Compat(raw: WebGL2RenderingContext, log: LogFn) {
       thrown = error;
     }
     const errorCode = Number(target.getError?.() || 0);
+    g.__mvmzGlErrorTraceBudget = budget - 1;
     if (errorCode || thrown) {
-      const budget = Math.max(0, Number(g.__mvmzGlErrorTraceBudget ?? 0));
       log('[webgl1] GL trace | call=' + name + ' error=' + errorCode + ' thrown=' + (thrown ? String(thrown) : 'none') + ' args=' + args.map(describeGlArg).join(','));
-      g.__mvmzGlErrorTraceBudget = Math.max(0, budget - 1);
-      if (g.__mvmzGlErrorTraceBudget <= 0) {
-        g.__mvmzGlErrorTraceEnabled = false;
-        log('[webgl1] GL trace budget exhausted');
-      }
+    }
+    if (g.__mvmzGlErrorTraceBudget <= 0) {
+      g.__mvmzGlErrorTraceEnabled = false;
+      log('[webgl1] GL trace call budget exhausted');
     }
     if (thrown) throw thrown;
     return result;
