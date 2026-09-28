@@ -264,4 +264,12 @@ class DocumentShim extends EventTarget {
     if(wanted==='*'||this.head.tagName===wanted)all.push(this.head);
     if(wanted==='*'||this.body.tagName===wanted)all.push(this.body);
     all.push(...this.documentElement.getElementsByTagName(tagName));
-    r
+    return Array.from(new Set(all));
+  }
+}
+
+export type DomCompat={document:DocumentShim;gl:any;glStats:CompatStats;createCanvas:(w:number,h:number)=>CanvasShim};
+export function installDomCompat(rawGl:WebGL2RenderingContext,log:LogFn):DomCompat{
+  const g=globalThis as AnyRecord; const {gl,stats}=createWebGL1Compat(rawGl,log); const provider=()=>gl; const document=new DocumentShim(provider); const events=new EventTarget();
+  installTextDecoderCompat(g,log);
+  g.window=g; g.self=g; g.global=g; g.document=document; g.innerWidth=screen.width; g.innerHei
