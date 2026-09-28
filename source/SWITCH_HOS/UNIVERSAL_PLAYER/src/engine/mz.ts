@@ -1,6 +1,5 @@
 import type { RuntimeContext } from '../types';
 import { extractScriptSources, ScriptLoader } from '../host/scripts';
-import { MvmzOptCache } from '../host/opt_cache';
 import { installMZStandaloneHostPump } from './mz_standalone';
 import { installMZAudioCompat } from './mz_audio';
 import { isWoff1, woff1ToSfnt } from '../compat/woff_sfnt';
@@ -289,40 +288,8 @@ function installMZBitmapCanvasBridge(ctx: RuntimeContext) {
   const proto = g.Bitmap?.prototype;
   if (!proto || proto.__mvmzCanvasUploadBridge) return;
   proto.__mvmzCanvasUploadBridge = true;
-  const originalStartLoading = proto._startLoading;
   const originalOnLoad = proto._onLoad;
-  const optCache = new MvmzOptCache(ctx, 'MZ');
-  let optLogged = 0;
   let logged = 0;
-
-  if (typeof originalStartLoading === 'function') {
-    proto._startLoading = function() {
-      const url = String(this._url || '');
-      if (url && optCache.isEnabled() && optCache.has(url)) {
-        const loaded = optCache.loadCanvas(url);
-        if (loaded) {
-          try {
-            this._destroyCanvas?.();
-            this._canvas = loaded.canvas;
-            this._context = loaded.context;
-            this._image = loaded.canvas;
-            this._loadingState = 'loaded';
-            this._createBaseTexture(loaded.canvas);
-            this._callLoadListeners();
-            if (optLogged < 32) {
-              optLogged++;
-              ctx.log(`[mz-opt] cache ready | ${url} ${loaded.width}x${loaded.height}`);
-              if (optLogged === 32) ctx.log('[mz-opt] further cache-ready logs suppressed');
-            }
-            return;
-          } catch (error) {
-            ctx.log(`[mz-opt] apply FAILED -> native fallback | ${url} | ${String((error as any)?.stack ?? error)}`);
-          }
-        }
-      }
-      return originalStartLoading.call(this);
-    };
-  }
 
   proto._onLoad = function() {
     const image = this._image;
@@ -1595,6 +1562,97 @@ function installMZBattlePrewarm(ctx: RuntimeContext) {
   ctx.log('[mz-battle-warm] generic animation effect/SE prewarm installed');
 }
 
+function mzEffectMemoryBrief() {
+  try {
+    const mem: any = Switch.memoryUsage();
+    const mib = (value: number) => (Number(value || 0) / 1048576).toFixed(1);
+    return ` heapMiB=${mib(mem.usedHeapSize)} externalMiB=${mib(mem.externalMemory)} nativeMiB=${mib(mem.nativeHeapUsed)}/${mib(mem.nativeHeapTotal)}`;
+  } catch {
+    return '';
+  }
+}
+
+function installMZEffectDiagnostics(ctx: RuntimeContext) {
+  const g: any = globalThis as any;
+  const manager = g.EffectManager;
+  if (!manager || manager.__mvmzEffectDiagnostics) return;
+  manager.__mvmzEffectDiagnostics = true;
+  const starts = new Map<string, number>();
+  let hitLogs = 0;
+  const now = () => Number(g.performance?.now?.() ?? Date.now());
+
+  if (typeof manager.load === 'function') {
+    const originalLoad = manager.load;
+    manager.load = function(filename: string) {
+      const name = String(filename || '');
+      if (name) {
+        try {
+          const url = String(this.makeUrl?.(name) || name);
+          const cached = this._cache?.[url];
+          if (cached?.isLoaded && hitLogs < 20) {
+            hitLogs++;
+            ctx.log(`[mz-effect] CACHE HIT | ${url}${mzEffectMemoryBrief()}`);
+            if (hitLogs === 20) ctx.log('[mz-effect] further cache-hit logs suppressed');
+          }
+        } catch {}
+      }
+      return originalLoad.call(this, filename);
+    };
+  }
+
+  if (typeof manager.startLoading === 'function') {
+    const originalStartLoading = manager.startLoading;
+    manager.startLoading = function(url: string) {
+      const key = String(url || '');
+      starts.set(key, now());
+      ctx.log(`[mz-effect] START | ${key}${mzEffectMemoryBrief()}`);
+      try {
+        return originalStartLoading.call(this, url);
+      } catch (error) {
+        starts.delete(key);
+        ctx.log(`[mz-effect] START FAILED | ${key} | ${String((error as any)?.stack ?? error)}${mzEffectMemoryBrief()}`);
+        throw error;
+      }
+    };
+  }
+
+  if (typeof manager.onLoad === 'function') {
+    const originalOnLoad = manager.onLoad;
+    manager.onLoad = function(url: string, ...args: any[]) {
+      const key = String(url || '');
+      const stamp = starts.get(key);
+      const elapsed = stamp == null ? -1 : Math.max(0, now() - stamp);
+      starts.delete(key);
+      ctx.log(`[mz-effect] READY | ${key} elapsedMs=${elapsed < 0 ? 'unknown' : elapsed.toFixed(1)}${mzEffectMemoryBrief()}`);
+      return originalOnLoad.call(this, url, ...args);
+    };
+  }
+
+  if (typeof manager.onError === 'function') {
+    const originalOnError = manager.onError;
+    manager.onError = function(url: string, ...args: any[]) {
+      const key = String(url || '');
+      const stamp = starts.get(key);
+      const elapsed = stamp == null ? -1 : Math.max(0, now() - stamp);
+      starts.delete(key);
+      ctx.log(`[mz-effect] ERROR | ${key} elapsedMs=${elapsed < 0 ? 'unknown' : elapsed.toFixed(1)}${mzEffectMemoryBrief()}`);
+      return originalOnError.call(this, url, ...args);
+    };
+  }
+
+  if (typeof manager.clear === 'function') {
+    const originalClear = manager.clear;
+    manager.clear = function(...args: any[]) {
+      const count = Object.keys(this._cache || {}).length;
+      starts.clear();
+      ctx.log(`[mz-effect] CLEAR | cached=${count}${mzEffectMemoryBrief()}`);
+      return originalClear.apply(this, args);
+    };
+  }
+
+  ctx.log('[mz-effect] first-use load timing diagnostics installed | preload=off');
+}
+
 function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
   scripts.onAfterScript(relative => {
     const lower = relative.toLowerCase();
@@ -1634,6 +1692,7 @@ function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
     }
     if (lower.endsWith('/rmmz_managers.js') || lower === 'js/rmmz_managers.js') {
       installMZSceneDiagnostics(ctx);
+      installMZEffectDiagnostics(ctx);
     }
     if (lower.endsWith('/rmmz_scenes.js') || lower === 'js/rmmz_scenes.js') {
       installMZBattleLifecycleDiagnostics(ctx);
@@ -1645,6 +1704,7 @@ function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
 export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   const { fs, log } = ctx;
   const document: any = (globalThis as any).document;
+  log('[mvmz-opt] V051 raw RGBA optimizer cache disabled after device regression; .mvmz_opt ignored');
   scripts.installDynamicScriptBridge(document);
   installMZBootCompat(ctx);
   installMZCoreHooks(ctx, scripts);
@@ -1668,8 +1728,9 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   log(`[mz] scripts/plugins drained | version=${g.Utils?.RPGMAKER_VERSION ?? 'pending-main'}`);
   installMZFontBridge(ctx);
   installMZSceneDiagnostics(ctx);
+  installMZEffectDiagnostics(ctx);
   installMZDamageBitmapCache(ctx);
-  log('[mz-warm] V049 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
+  log('[mz-warm] V051 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
   dispatchWindowLoad(log);

@@ -1,6 +1,12 @@
 MVMZ Optimizer v0.1
 ===================
 
+[상태 - 2026-09-28]
+이 raw RGBA `.mvmz_opt` 방식은 V050 실기 시험에서 체감 개선이 거의 없고
+native memory 사용량을 크게 늘리는 회귀가 확인되어 FAILED / SHELVED 상태입니다.
+NX-MVMZPLAYER V051 이상에서는 `.mvmz_opt` raw cache를 의도적으로 무시합니다.
+이 도구와 포맷은 실험 재현/분석용으로만 보존하며 일반 사용을 권장하지 않습니다.
+
 목적
 ----
 RPG Maker MV/MZ 게임에서 첫 사용 시 버벅임이 큰 Pictures / Faces / 전투 애니메이션 이미지를

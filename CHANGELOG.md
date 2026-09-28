@@ -4,6 +4,10 @@
 
 ### English
 
+- V051 baseline recovery: disables the V050 raw RGBA `.mvmz_opt` runtime path after device testing showed negligible hitch improvement and substantially higher native-memory pressure. Existing `.mvmz_opt` folders are ignored; normal on-demand game asset loading is restored.
+- MZ 0.51.0 adds non-preloading Effekseer first-use timing diagnostics (`START / READY / CACHE HIT`) with memory snapshots so effect loading can be measured without reintroducing proactive warm gates.
+- The V050 optimizer source/format is retained only for reproducibility and is now marked FAILED / SHELVED; Public Beta Release remains unchanged.
+
 - V050 experimental optimizer path: adds PC-side MVMZ Optimizer v0.1 and a new `.mvmz_opt` format, separate from the failed/shelved `.mvmz_warm` and legacy `.mvmz_cache` experiments.
 - The optimizer auto-detects MV/MZ, analyzes event Show Picture / Show Text Face / animation references, plugin-command and plugin literal strings, Skill/Item animation IDs, MZ effect names, SE references and dialogue/database glyphs.
 - The optimizer writes only selected hot `pictures / faces / animations` as validated MVMZRGBA v1 files under a user-selected raw-cache budget (default 512 MiB). Missing cache entries always fall back to the original game asset path.
@@ -29,6 +33,10 @@
 - Launcher game-name mapping, thumbnail view, 5x2 grid and Start+Select Yes/No UI from 0.5.0 are retained.
 
 ### 한국어
+
+- V051 기준선 복구: V050 raw RGBA `.mvmz_opt`가 실기에서 체감 개선이 거의 없고 native memory 압박을 크게 높인 것이 확인되어 runtime 사용을 비활성화했습니다. SD에 기존 `.mvmz_opt`가 남아 있어도 무시하고 원래의 on-demand 자산 로딩으로 복귀합니다.
+- MZ 0.51.0은 preload 없이 Effekseer 첫 사용 시간을 `START / READY / CACHE HIT`와 메모리 snapshot으로 기록해 proactive warm을 다시 켜지 않고 실제 effect 병목을 측정합니다.
+- V050 Optimizer 소스/포맷은 재현용으로만 보존하며 FAILED / SHELVED 상태로 표시합니다. Public Beta Release는 변경하지 않습니다.
 
 - V050 실험 Optimizer 경로: 실패/보류한 `.mvmz_warm`, 기존 `.mvmz_cache`와 완전히 분리된 새 `.mvmz_opt` 포맷과 PC용 MVMZ Optimizer v0.1을 추가했습니다.
 - Optimizer는 MV/MZ 자동 판별, 이벤트 Show Picture / Show Text Face / 애니메이션 참조, 플러그인 명령·literal 문자열, Skill/Item animationId, MZ effectName, SE 참조, 대사/DB glyph를 분석합니다.
