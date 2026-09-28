@@ -1,6 +1,7 @@
 import { RuntimeLogger } from '../../../UNIVERSAL_PLAYER/src/host/log';
 import { scanGames } from '../../../UNIVERSAL_PLAYER/src/host/discovery';
 import { prepareLauncherCatalog, selectGame } from '../../../UNIVERSAL_PLAYER/src/launcher';
+import { installNxPlusExitGuard } from '../../../UNIVERSAL_PLAYER/src/host/plus_exit_guard';
 
 const ROOT = 'sdmc:/mvmz';
 const LOG_ROOT = ROOT + '/_logs';
@@ -17,7 +18,8 @@ async function main() {
   Switch.mkdirSync(RUNTIME_ROOT);
   const logger = new RuntimeLogger(`${LOG_ROOT}/launcher.log`);
   const log = logger.log;
-  log('MVMZ Split Launcher v0.5.0 starting');
+  installNxPlusExitGuard(log);
+  log('MVMZ Split Launcher v0.6.0 starting');
   log('argv=' + JSON.stringify(Switch.argv));
   logger.flush();
 
