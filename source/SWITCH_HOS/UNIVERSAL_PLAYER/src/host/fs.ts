@@ -22,12 +22,14 @@ export function isAbsoluteResource(url: string) {
 
 export class ResourceFS {
   private dirCache = new Map<string, Map<string, string>>();
+  private resolvedPathCache = new Map<string, string>();
   private pathAliases = new Map<string, string>();
   private pathAliasesFolded = new Map<string, string>();
   private aliasLog = new Set<string>();
 
   constructor(readonly root: string, private readonly log: LogFn) {
     this.loadPathManifest();
+    this.log('[fs] resolved-path cache enabled | sync I/O semantics preserved');
   }
 
   private aliasKeys(input: string) {
@@ -104,10 +106,18 @@ export class ResourceFS {
     const raw = String(relativeOrAbsolute);
     if (raw.startsWith('sdmc:') || raw.startsWith('romfs:')) return raw;
     const rel = normalizeRelativePath(raw);
+    const cached = this.resolvedPathCache.get(rel);
+    if (cached) return cached;
     const mapped = this.resolveAlias(rel);
-    if (mapped) return mapped;
+    if (mapped) {
+      this.resolvedPathCache.set(rel, mapped);
+      return mapped;
+    }
     const exact = `${this.root}/${rel}`;
-    if (this.existsAbsolute(exact)) return exact;
+    if (this.existsAbsolute(exact)) {
+      this.resolvedPathCache.set(rel, exact);
+      return exact;
+    }
 
     let current = this.root;
     for (const segment of rel.split('/')) {
@@ -116,6 +126,7 @@ export class ResourceFS {
       if (!actual) return exact;
       current = `${current}/${actual}`;
     }
+    this.resolvedPathCache.set(rel, current);
     return current;
   }
 
@@ -148,5 +159,6 @@ export class ResourceFS {
 
   invalidate() {
     this.dirCache.clear();
+    this.resolvedPathCache.clear();
   }
 }

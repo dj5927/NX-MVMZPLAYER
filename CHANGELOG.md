@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- V055 isolated candidate: V052 is re-established as the locked stable baseline after V053/V054 device rejection. V055 reintroduces only successful ResourceFS path-resolution caching while preserving synchronous Switch.readFileSync I/O and all V052 bootstrap/image semantics.
+- V055 intentionally excludes the V053 async local XHR/fetch/Image path, MZ lazy Canvas/TextureGC changes, and cache-eviction rewrite. Future optimizations remain one functional change per device-tested build.
+
 ### English
 
 - V054 rollback recovery: V053 was rejected by device testing because MZ no longer booted and MV crashed near startup. All V053 runtime changes were reverted byte-for-byte to the V052 source baseline; only the MV/MZ version identifiers were advanced to 0.54.0 for log/build identification.
