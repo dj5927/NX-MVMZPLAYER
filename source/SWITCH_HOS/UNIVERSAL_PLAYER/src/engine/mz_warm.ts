@@ -41,6 +41,7 @@ const imageFolders:Record<string,string>={
 
 function compileManifest(ctx:RuntimeContext, fingerprint:any):WarmManifest{
   const started=Date.now();
+  ctx.reportProgress?.('MZ 사전 컴파일 중',0,'맵 데이터 분석 시작');
   const animations=readJson(ctx,'data/Animations.json',[]);
   const commons=readJson(ctx,'data/CommonEvents.json',[]);
   const tilesets=readJson(ctx,'data/Tilesets.json',[]);
@@ -98,10 +99,12 @@ function compileManifest(ctx:RuntimeContext, fingerprint:any):WarmManifest{
     for(const ev of map.events||[]){if(!ev)continue;for(let pi=0;pi<(ev.pages||[]).length;pi++){const page=ev.pages[pi],img=page?.image||{};addImage('character',img.characterName,0,`event:${ev.id}:page:${pi}`);scanList(page?.list,1,0,new Set(),`event:${ev.id}:page:${pi}`);}}
     const sort=(a:any,b:any)=>a.priority-b.priority||String(a.name||a.kind).localeCompare(String(b.name||b.kind));
     maps[String(mapId)]={images:[...images.values()].sort(sort),effects:[...effects.values()].sort(sort),se:[...ses.values()].sort(sort)};
+    ctx.reportProgress?.('MZ 사전 컴파일 중',Math.round(((mi+1)/Math.max(1,mapNames.length))*100),`${mi+1}/${mapNames.length} maps`);
     if((mi+1)%25===0)ctx.log(`[mz-warm-compile] maps ${mi+1}/${mapNames.length}`);
   }
   const manifest:WarmManifest={format:'MVMZWARM',version:2,engine:'MZ',generated_unix:Math.floor(Date.now()/1000),generator:'switch-first-run-v1',fingerprint,maps};
   ctx.log(`[mz-warm-compile] complete | maps=${Object.keys(maps).length} elapsedMs=${Date.now()-started}`);
+  ctx.reportProgress?.('MZ 사전 컴파일 완료',100,`${Object.keys(maps).length} maps`);
   return manifest;
 }
 
