@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $Url = "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf"
 $Expected = "6BCB2A0703AA137E874FC2DFFA85F6C21BA9A67FA329E81B8C801663AF7E992A"
-$Temp = Join-Path $env:TEMP "NotoSansCJKkr-Regular.otf"
+$Temp = Join-Path ([System.IO.Path]::GetTempPath()) "NotoSansCJKkr-Regular.otf"
 Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Temp
 $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Temp).Hash
 if ($Hash -ne $Expected) { throw "Noto CJK SHA-256 mismatch: $Hash" }
