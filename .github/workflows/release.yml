@@ -1,0 +1,188 @@
+name: Publish authorized public beta
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "release/RELEASE_VERSION.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate authorized version step
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(tr -d '[:space:]' < release/RELEASE_VERSION.txt)"
+          if [[ ! "$VERSION" =~ ^0\.([0-9]+)$ ]]; then
+            echo "Invalid release version: $VERSION"
+            echo "Expected format: 0.1, 0.2, 0.3 ..."
+            exit 1
+          fi
+
+          MINOR="${BASH_REMATCH[1]}"
+          TAG="v0.${MINOR}.0-beta"
+          TITLE="NX-MVMZPLAYER Public Beta $VERSION"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists: $TAG"
+            exit 1
+          fi
+
+          LATEST_TAG="$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v0\.[0-9]+\.0-beta$' | sort -V | tail -n 1 || true)"
+          if [[ -n "$LATEST_TAG" ]]; then
+            LATEST_MINOR="$(echo "$LATEST_TAG" | sed -E 's/^v0\.([0-9]+)\.0-beta$/\1/')"
+            EXPECTED_MINOR="$((LATEST_MINOR + 1))"
+            if [[ "$MINOR" -ne "$EXPECTED_MINOR" ]]; then
+              echo "Invalid release step."
+              echo "Latest release: $LATEST_TAG"
+              echo "Requested: $TAG"
+              echo "Expected next release: v0.${EXPECTED_MINOR}.0-beta"
+              exit 1
+            fi
+          elif [[ "$MINOR" -ne 1 ]]; then
+            echo "First public beta must be 0.1"
+            exit 1
+          fi
+
+          if ! grep -Fq "## Public Beta $VERSION" CHANGELOG.md; then
+            echo "CHANGELOG.md is missing: ## Public Beta $VERSION"
+            exit 1
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "minor=$MINOR"
+            echo "tag=$TAG"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: source/SWITCH_HOS/package-lock.json
+
+      - name: Install dependencies
+        working-directory: source/SWITCH_HOS
+        run: npm ci --no-audit --no-fund
+
+      - name: Fetch verified Noto CJK font
+        shell: pwsh
+        run: ./tools/fetch_noto.ps1
+
+      - name: Build launcher
+        working-directory: source/SWITCH_HOS/SPLIT_RUNTIME/LAUNCHER
+        run: npm run nro
+
+      - name: Typecheck and build MV player
+        working-directory: source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER
+        run: |
+          npm run typecheck
+          npm run nro
+
+      - name: Typecheck and build MZ player
+        working-directory: source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER
+        run: |
+          npm run typecheck
+          npm run nro
+
+      - name: Package authorized release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUT="NX-MVMZPLAYER_Public_Beta_${VERSION}.zip"
+          mkdir -p package/mvmz
+          mkdir -p package/switch/mvmzplayer/runtime
+
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/LAUNCHER/mvmz-split-launcher.nro package/switch/mvmzplayer/MVMZ_Launcher.nro
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER/mvmz-mv-player.nro package/switch/mvmzplayer/runtime/MVMZ_MV_Player.nro
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER/mvmz-mz-player.nro package/switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro
+
+          printf '%s\n' \
+            'NX-MVMZPLAYER GAME FOLDER' \
+            '' \
+            'PLACE YOUR RPG MAKER MV/MZ GAME FOLDERS HERE.' \
+            '' \
+            'Example:' \
+            'mvmz/MyGame/' \
+            'mvmz/AnotherGame/' \
+            > package/mvmz/HERE_GAME_FOLDER.txt
+
+          cp README_KR.md package/switch/mvmzplayer/README_KR.md
+          cp README_EN.md package/switch/mvmzplayer/README_EN.md
+          cp LICENSE package/switch/mvmzplayer/LICENSE
+          cp THIRD_PARTY_NOTICES.md package/switch/mvmzplayer/THIRD_PARTY_NOTICES.md
+
+          (
+            cd package/switch/mvmzplayer
+            sha256sum MVMZ_Launcher.nro runtime/MVMZ_MV_Player.nro runtime/MVMZ_MZ_Player.nro > SHA256SUMS.txt
+          )
+
+          (
+            cd package
+            zip -r -9 "../$OUT" mvmz switch
+          )
+
+          echo "asset=$OUT" >> "$GITHUB_ENV"
+
+      - name: Build bilingual release notes
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# Changelog / 변경 사항"
+            echo
+            awk -v target="## Public Beta $VERSION" '
+              $0 == target { active=1 }
+              active && /^## Public Beta / && $0 != target { exit }
+              active { print }
+            ' CHANGELOG.md
+          } > release_notes.md
+
+          if ! grep -Fq "## Public Beta $VERSION" release_notes.md; then
+            echo "Failed to extract release notes for Public Beta $VERSION"
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX-MVMZPLAYER_Public_Beta_${{ steps.release.outputs.version }}
+          path: ${{ env.asset }}
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TITLE: ${{ steps.release.outputs.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$asset" \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --prerelease \
+            --notes-file release_notes.md
