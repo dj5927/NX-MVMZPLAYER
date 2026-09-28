@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/publish-beta.yml"
+      - "source/**"
+      - "tools/fetch_noto.ps1"
   workflow_dispatch:
 
 permissions:
