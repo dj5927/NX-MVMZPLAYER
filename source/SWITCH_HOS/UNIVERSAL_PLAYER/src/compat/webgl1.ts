@@ -300,4 +300,263 @@ export function createWebGL1Compat(raw: WebGL2RenderingContext, log: LogFn) {
       try {
         if (drawEnum != null) raw.bindFramebuffer((raw as any).DRAW_FRAMEBUFFER, oldDraw);
         if (readEnum != null) raw.bindFramebuffer((raw as any).READ_FRAMEBUFFER, oldRead);
-        if (drawEnum == null && readEnum == null) raw.bindFramebuffer((raw as any).FRAMEBUFFER, oldDra
+        if (drawEnum == null && readEnum == null) raw.bindFramebuffer((raw as any).FRAMEBUFFER, oldDraw);
+      } catch {}
+      try { raw.deleteFramebuffer(framebuffer); } catch {}
+    }
+  };
+  const withRawUnpackDisabled = (work: () => any) => {
+    const premultiplyEnum = (raw as any).UNPACK_PREMULTIPLY_ALPHA_WEBGL;
+    const flipEnum = (raw as any).UNPACK_FLIP_Y_WEBGL;
+    const oldPremultiply = !!raw.getParameter(premultiplyEnum);
+    const oldFlip = !!raw.getParameter(flipEnum);
+    try {
+      raw.pixelStorei(premultiplyEnum, false);
+      raw.pixelStorei(flipEnum, false);
+      return work();
+    } finally {
+      raw.pixelStorei(premultiplyEnum, oldPremultiply);
+      raw.pixelStorei(flipEnum, oldFlip);
+    }
+  };
+
+  const updateDefaultFramebufferFit = (logicalWidth: number, logicalHeight: number) => {
+    if (!(logicalWidth > 0) || !(logicalHeight > 0)) return;
+    const physicalWidth = Number(raw.drawingBufferWidth || (globalThis as any).screen?.width || logicalWidth);
+    const physicalHeight = Number(raw.drawingBufferHeight || (globalThis as any).screen?.height || logicalHeight);
+    const scale = Math.min(physicalWidth / logicalWidth, physicalHeight / logicalHeight);
+    const width = Math.max(1, Math.round(logicalWidth * scale));
+    const height = Math.max(1, Math.round(logicalHeight * scale));
+    const x = Math.floor((physicalWidth - width) / 2);
+    const y = Math.floor((physicalHeight - height) / 2);
+    const changed = logicalWidth !== fitLogicalWidth || logicalHeight !== fitLogicalHeight ||
+      width !== fitWidth || height !== fitHeight || x !== fitX || y !== fitY;
+
+    fitLogicalWidth = logicalWidth;
+    fitLogicalHeight = logicalHeight;
+    fitScale = scale;
+    fitX = x;
+    fitY = y;
+    fitWidth = width;
+    fitHeight = height;
+
+    (globalThis as any).__mvmzViewportFit = {
+      logicalWidth,
+      logicalHeight,
+      physicalWidth,
+      physicalHeight,
+      scale,
+      x,
+      y,
+      width,
+      height,
+      top: physicalHeight - (y + height)
+    };
+
+    if (changed) {
+      log(`[webgl1] default framebuffer fit | logical=${logicalWidth}x${logicalHeight} physical=${physicalWidth}x${physicalHeight} viewport=${x},${y},${width}x${height} scale=${scale.toFixed(4)}`);
+    }
+  };
+
+  const bindFramebufferCompat = (target: number, framebuffer: any) => {
+    if (target === (raw as any).FRAMEBUFFER || target === (raw as any).DRAW_FRAMEBUFFER) currentFramebuffer = framebuffer;
+    return (raw as any).bindFramebuffer(target, framebuffer);
+  };
+
+  const viewportCompat = (x: number, y: number, width: number, height: number) => {
+    if (currentFramebuffer == null) {
+      if (x === 0 && y === 0) updateDefaultFramebufferFit(width, height);
+      return (raw as any).viewport(
+        Math.round(fitX + x * fitScale),
+        Math.round(fitY + y * fitScale),
+        Math.max(1, Math.round(width * fitScale)),
+        Math.max(1, Math.round(height * fitScale))
+      );
+    }
+    return (raw as any).viewport(x, y, width, height);
+  };
+
+  const scissorCompat = (x: number, y: number, width: number, height: number) => {
+    if (currentFramebuffer == null && fitLogicalWidth > 0 && fitLogicalHeight > 0) {
+      return (raw as any).scissor(
+        Math.round(fitX + x * fitScale),
+        Math.round(fitY + y * fitScale),
+        Math.max(1, Math.round(width * fitScale)),
+        Math.max(1, Math.round(height * fitScale))
+      );
+    }
+    return (raw as any).scissor(x, y, width, height);
+  };
+
+  const getExtension = (name: string) => {
+    const native = raw.getExtension(name);
+    if (native) return native;
+    if (aliases.has(name)) return aliases.get(name);
+    let alias: any = null;
+    if (name === 'OES_vertex_array_object' || name === 'MOZ_OES_vertex_array_object' || name === 'WEBKIT_OES_vertex_array_object') {
+      alias = makeVertexArrayAlias(nativeVao);
+      if (alias) log('[webgl1] OES VAO alias bound to frozen WebGL2 entrypoints');
+    } else if (name === 'OES_packed_depth_stencil') {
+      alias = { DEPTH_STENCIL_OES: 0x84f9 };
+      log('[webgl1] OES packed depth-stencil alias -> WebGL2 core');
+    } else if (name === 'OES_texture_float' || name === 'OES_element_index_uint' || name === 'OES_standard_derivatives') {
+      alias = {};
+    }
+    aliases.set(name, alias);
+    if (alias && !stats.extensionAliases.includes(name)) stats.extensionAliases.push(name);
+    return alias;
+  };
+
+  const describeGlArg = (value: any) => {
+    if (value == null) return String(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (typeof value === 'string') return JSON.stringify(value.slice(0, 80));
+    if (ArrayBuffer.isView(value)) return String(value.constructor?.name || 'TypedArray') + '(' + Number(value.byteLength || (value as any).length || 0) + ')';
+    if (value instanceof ArrayBuffer) return 'ArrayBuffer(' + value.byteLength + ')';
+    const ctor = String(value?.constructor?.name || typeof value);
+    const width = Number(value?.width || value?.videoWidth || 0);
+    const height = Number(value?.height || value?.videoHeight || 0);
+    return width > 0 && height > 0 ? ctor + '(' + width + 'x' + height + ')' : ctor;
+  };
+
+  const tracedMethods = new Set([
+    'texParameteri', 'pixelStorei',
+    'framebufferTexture2D', 'framebufferRenderbuffer', 'renderbufferStorage',
+    'bufferData', 'bufferSubData', 'vertexAttribPointer',
+    'drawElements', 'drawArrays'
+  ]);
+
+  const callWithGlTrace = (target: any, name: string, fn: (...args: any[]) => any, args: any[]) => {
+    const g: any = globalThis as any;
+    if (!g.__mvmzGlErrorTraceEnabled) return fn(...args);
+    let result: any;
+    let thrown: any = null;
+    try {
+      result = fn(...args);
+    } catch (error) {
+      thrown = error;
+    }
+    const errorCode = Number(target.getError?.() || 0);
+    if (errorCode || thrown) {
+      const budget = Math.max(0, Number(g.__mvmzGlErrorTraceBudget ?? 0));
+      log('[webgl1] GL trace | call=' + name + ' error=' + errorCode + ' thrown=' + (thrown ? String(thrown) : 'none') + ' args=' + args.map(describeGlArg).join(','));
+      g.__mvmzGlErrorTraceBudget = Math.max(0, budget - 1);
+      if (g.__mvmzGlErrorTraceBudget <= 0) {
+        g.__mvmzGlErrorTraceEnabled = false;
+        log('[webgl1] GL trace budget exhausted');
+      }
+    }
+    if (thrown) throw thrown;
+    return result;
+  };
+
+  const proxy = new Proxy(raw as any, {
+    get(target, property) {
+      if (property === 'getExtension') return getExtension;
+      if (property === 'activeTexture') return (unit: number) => {
+        trackedActiveTexture = Number(unit);
+        return callWithGlTrace(target, 'activeTexture', target.activeTexture.bind(target), [unit]);
+      };
+      if (property === 'bindTexture') return (targetEnum: number, texture: any) => {
+        if (targetEnum === target.TEXTURE_2D) {
+          trackedTexture2DByUnit.set(trackedActiveTexture, texture);
+          trackedLastTexture2D = texture;
+          trackedTextureBindSerial++;
+        }
+        return callWithGlTrace(target, 'bindTexture', target.bindTexture.bind(target), [targetEnum, texture]);
+      };
+      if (property === 'bindFramebuffer') return bindFramebufferCompat;
+      if (property === 'viewport') return viewportCompat;
+      if (property === 'scissor') return scissorCompat;
+      if (property === 'createShader') return (type: number) => { const shader = target.createShader(type); if (shader) shaderTypes.set(shader, type); return shader; };
+      if (property === 'shaderSource') return (shader: object, source: string) => {
+        const type = shaderTypes.get(shader);
+        let translated = source;
+        if (!/^\s*#version\s+300\s+es/m.test(source)) {
+          if (type === target.VERTEX_SHADER) { translated = translateVertex(source); stats.vertexShaders++; }
+          else if (type === target.FRAGMENT_SHADER) { translated = translateFragment(source); stats.fragmentShaders++; }
+          if (translated !== source) stats.translatedShaders++;
+        }
+        shaderSources.set(shader, translated);
+        return target.shaderSource(shader, translated);
+      };
+      if (property === 'compileShader') return (shader: object) => {
+        target.compileShader(shader);
+        if (!target.getShaderParameter(shader, target.COMPILE_STATUS)) {
+          stats.compileFailures++;
+          if (stats.compileFailures <= maxFailureLogs) {
+            log(`[webgl1] shader compile FAILED: ${String(target.getShaderInfoLog(shader) ?? 'unknown')}`);
+            log(`[webgl1] source head: ${(shaderSources.get(shader) ?? '').slice(0, 500).replace(/\s+/g, ' ')}`);
+          } else if (stats.compileFailures === maxFailureLogs + 1) {
+            log(`[webgl1] further shader failure logs suppressed after ${maxFailureLogs} failures`);
+          }
+        }
+      };
+      if (property === 'texImage2D') return (...args: any[]) => {
+        if (args.length === 6) {
+          const prepared = prepareCanvasUpload(args[5], false);
+          if (prepared) {
+            const typedArgs = [args[0], args[1], args[2], prepared.width, prepared.height, 0, args[3], args[4], prepared.upload];
+            return withRawUnpackDisabled(() => {
+              const result = callWithGlTrace(target, 'texImage2D', target.texImage2D.bind(target), typedArgs);
+              probeUploadedTexture(prepared);
+              try { prepared.dirtyOwner?.__mvmzClearDirtyRect?.(); } catch {}
+              return result;
+            });
+          }
+        }
+        if (args.length >= 6) args[args.length - 1] = unwrapTexSource(args[args.length - 1]);
+        return callWithGlTrace(target, 'texImage2D', target.texImage2D.bind(target), args);
+      };
+      if (property === 'texSubImage2D') return (...args: any[]) => {
+        if (args.length === 7) {
+          const prepared = prepareCanvasUpload(args[6], true);
+          if (prepared) {
+            const typedArgs = [args[0], args[1], Number(args[2] || 0) + Number(prepared.x || 0), Number(args[3] || 0) + Number(prepared.y || 0), prepared.width, prepared.height, args[4], args[5], prepared.upload];
+            return withRawUnpackDisabled(() => {
+              const result = callWithGlTrace(target, 'texSubImage2D', target.texSubImage2D.bind(target), typedArgs);
+              probeUploadedTexture(prepared);
+              try { prepared.dirtyOwner?.__mvmzClearDirtyRect?.(); } catch {}
+              return result;
+            });
+          }
+        }
+        if (args.length >= 7) args[args.length - 1] = unwrapTexSource(args[args.length - 1]);
+        return callWithGlTrace(target, 'texSubImage2D', target.texSubImage2D.bind(target), args);
+      };
+      if (property === 'renderbufferStorage') return (targetEnum: number, internalFormat: number, width: number, height: number) => {
+        const mappedFormat = internalFormat === 0x84f9
+          ? Number(target.DEPTH24_STENCIL8 ?? 0x88f0)
+          : internalFormat;
+        if (mappedFormat !== internalFormat) {
+          log('[webgl1] renderbufferStorage DEPTH_STENCIL_OES -> DEPTH24_STENCIL8');
+        }
+        return callWithGlTrace(
+          target,
+          'renderbufferStorage',
+          target.renderbufferStorage.bind(target),
+          [targetEnum, mappedFormat, width, height]
+        );
+      };
+      if (property === 'bufferSubData') return (...args: any[]) => {
+        const data = args[2];
+        if (data != null && Number(data.byteLength ?? 0) === 0) return;
+        return callWithGlTrace(target, 'bufferSubData', target.bufferSubData.bind(target), args);
+      };
+      if (property === 'getContextAttributes') return () => ({ ...(target.getContextAttributes?.() ?? {}), stencil: true });
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== 'function') return value;
+      if (typeof property === 'string' && tracedMethods.has(property)) {
+        if (boundMethods.has(property)) return boundMethods.get(property);
+        const traced = (...args: any[]) => callWithGlTrace(target, property, value.bind(target), args);
+        boundMethods.set(property, traced);
+        return traced;
+      }
+      if (boundMethods.has(property)) return boundMethods.get(property);
+      const bound = value.bind(target);
+      boundMethods.set(property, bound);
+      return bound;
+    }
+  });
+  return { gl: proxy as any, stats };
+}
