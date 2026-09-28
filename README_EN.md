@@ -1,4 +1,4 @@
-# NX-MVMZPLAYER ??Public Beta 0.1
+# NX-MVMZPLAYER — Public Beta 0.1
 
 NX-MVMZPLAYER is a player project designed to detect and run RPG Maker MV/MZ game folders.
 
@@ -23,19 +23,22 @@ The current release is **Public Beta 0.1**. Compatibility may vary depending on 
 
 > Game data is not included with this project. Use only game files that you are legally entitled to use.
 
+---
+
 ## Thanks
 
 This project benefited greatly from the work of the following open-source projects and their contributors. Thank you.
 
-- **nx.js** ??https://github.com/TooTallNate/nx.js
-- **PixiJS** ??https://github.com/pixijs/pixijs
-- **pako** ??https://github.com/nodeca/pako
-- **pngjs** ??https://github.com/pngjs/pngjs
-- **Noto CJK** ??https://github.com/notofonts/noto-cjk
-- **esbuild** ??https://github.com/evanw/esbuild
-- **TypeScript** ??https://github.com/microsoft/TypeScript
+- **nx.js** — https://github.com/TooTallNate/nx.js
+- **PixiJS** — https://github.com/pixijs/pixijs
+- **pako** — https://github.com/nodeca/pako
+- **pngjs** — https://github.com/pngjs/pngjs
+- **Noto CJK** — https://github.com/notofonts/noto-cjk
+- **esbuild** — https://github.com/evanw/esbuild
+- **TypeScript** — https://github.com/microsoft/TypeScript
+
 ---
 
-## ?�원?�기 / Support
+## Support / 후원하기
 
-<a href="https://litt.ly/sjh5927"><img src="https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdna%2FlvjgO%2FdJMcagUft4m%2FAAAAAAAAAAAAAAAAAAAAADvfAj7AelLvJJ0E69DahlezNRltmAOzkyYdMTpR7aYi%2Fimg.png%3Fcredential%3DyqXZFxpELC7KVnFOS48ylbz2pIh7yKj8%26expires%3D1788188399%26allow_ip%3D%26allow_referer%3D%26signature%3DlqucGHqfqFS6CSqUdZlQTp%252BQB8c%253D" style="width:100%;max-width:100%;height:auto;display:block;" alt="?�원?�기"></a>
+<a href="https://litt.ly/sjh5927"><img src="assets/support.png" style="width:100%;max-width:100%;height:auto;display:block;" alt="Support"></a>
