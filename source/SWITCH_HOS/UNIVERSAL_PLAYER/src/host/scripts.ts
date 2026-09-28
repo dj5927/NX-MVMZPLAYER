@@ -26,6 +26,7 @@ export function extractScriptSources(indexHtml: string) {
 export class ScriptLoader {
   private tail: Promise<void> = Promise.resolve();
   private pending = 0;
+  private beforeHooks: Array<(relative: string) => void | Promise<void>> = [];
   private afterHooks: Array<(relative: string) => void | Promise<void>> = [];
   private nativeBodyAppend: ((child: any) => any) | null = null;
   private nativeHeadAppend: ((child: any) => any) | null = null;
@@ -148,6 +149,10 @@ export class ScriptLoader {
     this.afterHooks.push(hook);
   }
 
+  onBeforeScript(hook: (relative: string) => void | Promise<void>) {
+    this.beforeHooks.push(hook);
+  }
+
   installDynamicScriptBridge(document: any) {
     this.nativeBodyAppend = document.body.appendChild.bind(document.body);
     this.nativeHeadAppend = document.head.appendChild.bind(document.head);
@@ -212,10 +217,18 @@ export class ScriptLoader {
     this.log(`[script] OK ${rel}`);
   }
 
+  async loadNowWithHooks(relative: string, browserLibrary = false, scriptElement?: any, document?: any) {
+    const rel = normalizeRelativePath(relative);
+    for (const hook of this.beforeHooks) await hook(rel);
+    this.loadNow(rel, browserLibrary, scriptElement, document);
+    for (const hook of this.afterHooks) await hook(rel);
+  }
+
   enqueue(relative: string, browserLibrary = false, scriptElement?: any, document?: any) {
     this.pending++;
     this.tail = this.tail.then(async () => {
       try {
+        for (const hook of this.beforeHooks) await hook(normalizeRelativePath(relative));
         this.loadNow(relative, browserLibrary, scriptElement, document);
         for (const hook of this.afterHooks) await hook(normalizeRelativePath(relative));
         scriptElement?.onload?.({ target: scriptElement } as any);
@@ -248,6 +261,7 @@ export class ScriptLoader {
     const pieces: string[] = [];
     for (let i = 0; i < batch.length; i++) {
       const entry = batch[i];
+      for (const hook of this.beforeHooks) await hook(normalizeRelativePath(entry.relative));
       const raw = this.fs.readText(entry.relative);
       pieces.push(`\n;globalThis.__mvmzPluginBatchSetCurrent(${i});\n${raw}\n`);
     }

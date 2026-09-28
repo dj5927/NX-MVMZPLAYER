@@ -18,6 +18,7 @@ export type RuntimeContext = {
   glStats: import('./compat/webgl1').CompatStats;
   standaloneEngine?: boolean;
   flushLog?: () => void;
+  compat?: import('./host/compat').CompatManager;
   mvWarmBudgetMP?: number;
   mvWarmMaxAssets?: number;
   mvWarmBackgroundMax?: number;

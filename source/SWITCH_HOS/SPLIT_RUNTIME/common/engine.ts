@@ -8,6 +8,7 @@ import { ScriptLoader } from '../../UNIVERSAL_PLAYER/src/host/scripts';
 import { installGameExitConfirmation } from '../../UNIVERSAL_PLAYER/src/host/exit_confirm';
 import { installNxPlusExitGuard } from '../../UNIVERSAL_PLAYER/src/host/plus_exit_guard';
 import { drawStaticLoadingBar, presentStaticLoadingFrame } from '../../UNIVERSAL_PLAYER/src/host/static_loading';
+import { CompatManager, runtimeInstallRoot } from '../../UNIVERSAL_PLAYER/src/host/compat';
 import { bootMv } from '../../UNIVERSAL_PLAYER/src/engine/mv';
 import { bootMz } from '../../UNIVERSAL_PLAYER/src/engine/mz';
 import type { EngineKind, GameInfo, RuntimeContext } from '../../UNIVERSAL_PLAYER/src/types';
@@ -87,6 +88,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   }
 
   const game: GameInfo = { name, root: gameRoot, dataRoot, engine: expectedEngine, id };
+  const compat = new CompatManager(game, log, runtimeInstallRoot());
   const rawGl = screen.getContext('webgl2');
   if (!rawGl) throw new Error('WebGL2 context creation failed');
   drawStaticLoadingBar(rawGl, expectedEngine, name, log);
@@ -109,6 +111,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   logger.flush();
 
   const scripts = new ScriptLoader(fs, log, expectedEngine === 'MV' ? 'mv-batch' : 'legacy');
+  compat.attachScriptLoader(scripts);
   log(`[split-init] script loader ready | mode=${expectedEngine === 'MV' ? 'mv-batch' : 'legacy'}`);
   logger.flush();
   const ctx: RuntimeContext = {
@@ -119,6 +122,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
     glStats: dom.glStats,
     standaloneEngine: true,
     flushLog: () => logger.flush(),
+    compat,
     mvWarmBudgetMP: expectedEngine === 'MV' ? 6 : undefined,
     mvWarmMaxAssets: expectedEngine === 'MV' ? 8 : undefined,
     mvWarmBackgroundMax: expectedEngine === 'MV' ? 0 : undefined
@@ -129,6 +133,7 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
     const mem = Switch.memoryUsage();
     log(`[split-init] pre-boot memory | heapMiB=${(Number(mem.usedHeapSize || 0) / 1048576).toFixed(1)} nativeMiB=${(Number(mem.nativeHeapUsed || 0) / 1048576).toFixed(1)}/${(Number(mem.nativeHeapTotal || 0) / 1048576).toFixed(1)}`);
   } catch {}
+  compat.runPhase('pre_core');
   log(`[split-init] boot ${expectedEngine} enter`);
   logger.flush();
   if (expectedEngine === 'MV') await bootMv(ctx, scripts);
@@ -175,7 +180,8 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
     try {
       memSnapshot = Switch.memoryUsage();
       const mib = (value: number) => (Number(value || 0) / 1048576).toFixed(1);
-      memory = ` heapMiB=${mib(memSnapshot.usedHeapSize)} externalMiB=${mib(memSnapshot.externalMemory)} nativeMiB=${mib(memSnapshot.nativeHeapUsed)}/${mib(memSnapshot.nativeHeapTotal)}`;
+      const capacityFree = Math.max(0, Number(memSnapshot.nativeHeapTotal || 0) - Number(memSnapshot.nativeHeapUsed || 0));
+      memory = ` heapMiB=${mib(memSnapshot.usedHeapSize)} externalMiB=${mib(memSnapshot.externalMemory)} mallocMiB=${mib(memSnapshot.mallocedMemory)} nativeMiB=${mib(memSnapshot.nativeHeapUsed)}/${mib(memSnapshot.nativeHeapTotal)} nativeArenaMiB=${mib(memSnapshot.nativeHeapArena)} nativeFreeMiB=${mib(memSnapshot.nativeHeapFree)} capacityFreeMiB=${mib(capacityFree)}`;
     } catch {}
     log(`HEARTBEAT scene=${g.SceneManager?._scene?.constructor?.name ?? 'none'} fps=${fps} cache=${cacheKeys.length} cacheMP=${(cachePixels / 1e6).toFixed(1)}${memory}`);
     try { logger.flush(); } catch {}

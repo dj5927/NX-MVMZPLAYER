@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "game.garun_windows.mz.memory.v057",
+      "enabled": true,
+      "priority": 1000,
+      "match": {
+        "engine": "MZ",
+        "gameId": "garun_windows",
+        "pluginsAll": [
+          "TMPreloadEx",
+          "pura_NonFieldDungeon"
+        ]
+      },
+      "settings": {
+        "mzMemory": {
+          "profile": "garun_windows-v057",
+          "preemptiveWaterMiB": 1024,
+          "fullWaterMiB": 1280,
+          "preemptiveTransitions": [
+            "Scene_Map->Scene_Map",
+            "Scene_Battle->Scene_Map"
+          ]
+        }
+      },
+      "scripts": {
+        "post_plugins": [
+          "scripts/games/garun_windows_memory.js"
+        ]
+      }
+    }
+  ]
+}
