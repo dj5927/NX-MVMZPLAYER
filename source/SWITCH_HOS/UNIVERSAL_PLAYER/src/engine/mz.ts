@@ -1187,7 +1187,7 @@ function installMZEventAssetPrewarm(ctx: RuntimeContext) {
       else bitmap.addLoadListener?.(ready);
     } catch (error) {
       completed.add(item.key);
-      ctx.log(`[mz-asset-warm] image preload FAILED      ctx.log(`[mz-asset-warm] image preload FAILED | ${item.key} | ${String((error as any)?.message ?? error)}`);
+      ctx.log(`[mz-asset-warm] image preload FAILED | ${item.key} | ${String((error as any)?.message ?? error)}`);
     }
   };
 
