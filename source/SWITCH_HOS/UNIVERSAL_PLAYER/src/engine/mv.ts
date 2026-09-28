@@ -5,7 +5,6 @@ import { installMvNativeVideoBridge } from './mv_video';
 import { installMvNativeAudioStream } from './mv_audio_stream';
 import { installMvNodeRequireCompat } from './mv_node_compat';
 import { decodePngExact } from '../compat/png_exact';
-import { ensureMVWarmManifest, installMVWarmLearning } from './mv_warm';
 
 var FPSMeterStub = class {
   isPaused = false;
@@ -1888,12 +1887,10 @@ function installMvAssetPrewarmBridge(ctx) {
     battleback1: "img/battlebacks1",
     battleback2: "img/battlebacks2",
     character: "img/characters",
-    enemy: "img/enemies",
     face: "img/faces",
     parallax: "img/parallaxes",
     picture: "img/pictures",
     svactor: "img/sv_actors",
-    svenemy: "img/sv_enemies",
     tileset: "img/tilesets"
   };
   const configurePrepareLimiter = (maxPerFrame) => {
@@ -2019,12 +2016,10 @@ function installMvAssetPrewarmBridge(ctx) {
     battleback1: "reserveBattleback1",
     battleback2: "reserveBattleback2",
     character: "reserveCharacter",
-    enemy: "reserveEnemy",
     face: "reserveFace",
     parallax: "reserveParallax",
     picture: "reservePicture",
     svactor: "reserveSvActor",
-    svenemy: "reserveSvEnemy",
     tileset: "reserveTileset"
   };
   const loadMethod = {
@@ -2032,12 +2027,10 @@ function installMvAssetPrewarmBridge(ctx) {
     battleback1: "loadBattleback1",
     battleback2: "loadBattleback2",
     character: "loadCharacter",
-    enemy: "loadEnemy",
     face: "loadFace",
     parallax: "loadParallax",
     picture: "loadPicture",
     svactor: "loadSvActor",
-    svenemy: "loadSvEnemy",
     tileset: "loadTileset"
   };
   const loadWarmAsset = (asset, reservationId) => {
@@ -2389,8 +2382,7 @@ export async function bootMv(ctx, scripts) {
   installMvGraphicsPerformanceBridge(ctx);
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
-  const mvWarmManifest = ensureMVWarmManifest(ctx);
-  installMVWarmLearning(ctx, mvWarmManifest);
+  log('[mv-warm] V046 auto compiler/self-learning disabled; V043 manual/runtime warm path restored');
   installMvAssetPrewarmBridge(ctx);
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
