@@ -1,0 +1,11 @@
+{
+  "name": "mvmz-mz-player",
+  "version": "0.44.0",
+  "private": true,
+  "scripts": {
+    "build": "node ../../node_modules/esbuild/bin/esbuild --bundle --sourcemap --sources-content=false --target=es2022 --format=esm --outfile=romfs/main.js src/main.ts",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "nro": "npm run build && node ../../node_modules/@nx.js/nro/dist/main.js --fat"
+  }
+}
+

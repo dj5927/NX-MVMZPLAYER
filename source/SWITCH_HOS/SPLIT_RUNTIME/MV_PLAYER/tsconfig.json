@@ -1,0 +1,4 @@
+{
+  "extends": "../../UNIVERSAL_PLAYER/tsconfig.json",
+  "include": ["src/**/*.ts", "../common/**/*.ts"]
+}
