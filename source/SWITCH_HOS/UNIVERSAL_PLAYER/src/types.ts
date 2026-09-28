@@ -21,4 +21,5 @@ export type RuntimeContext = {
   mvWarmBudgetMP?: number;
   mvWarmMaxAssets?: number;
   mvWarmBackgroundMax?: number;
+  reportProgress?: (label: string, percent?: number, detail?: string) => void;
 };
