@@ -1,4 +1,4 @@
-name: Publish Public Beta 0.1
+name: Verify main build
 
 on:
   push:
@@ -6,16 +6,23 @@ on:
       - main
     paths:
       - ".github/workflows/publish-beta.yml"
+      - ".github/workflows/release.yml"
       - "source/**"
-      - "tools/fetch_noto.ps1"
+      - "tools/**"
+      - "README*.md"
       - "CHANGELOG.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - "RELEASE_POLICY.md"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-release:
+  verify:
     runs-on: ubuntu-latest
 
     steps:
@@ -53,17 +60,16 @@ jobs:
           npm run typecheck
           npm run nro
 
-      - name: Package Public Beta
+      - name: Build SD-card layout artifact
         shell: bash
         run: |
           set -euo pipefail
-          OUT="NX-MVMZPLAYER_Public_Beta_0.1.zip"
-          mkdir -p mvmz
-          mkdir -p switch/mvmzplayer/runtime
+          mkdir -p artifact/mvmz
+          mkdir -p artifact/switch/mvmzplayer/runtime
 
-          cp source/SWITCH_HOS/SPLIT_RUNTIME/LAUNCHER/mvmz-split-launcher.nro switch/mvmzplayer/MVMZ_Launcher.nro
-          cp source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER/mvmz-mv-player.nro switch/mvmzplayer/runtime/MVMZ_MV_Player.nro
-          cp source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER/mvmz-mz-player.nro switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/LAUNCHER/mvmz-split-launcher.nro artifact/switch/mvmzplayer/MVMZ_Launcher.nro
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER/mvmz-mv-player.nro artifact/switch/mvmzplayer/runtime/MVMZ_MV_Player.nro
+          cp source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER/mvmz-mz-player.nro artifact/switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro
 
           printf '%s\n' \
             'NX-MVMZPLAYER GAME FOLDER' \
@@ -73,54 +79,25 @@ jobs:
             'Example:' \
             'mvmz/MyGame/' \
             'mvmz/AnotherGame/' \
-            > mvmz/HERE_GAME_FOLDER.txt
+            > artifact/mvmz/HERE_GAME_FOLDER.txt
 
-          cp README_KR.md switch/mvmzplayer/README_KR.md
-          cp README_EN.md switch/mvmzplayer/README_EN.md
-          cp LICENSE switch/mvmzplayer/LICENSE
-          cp THIRD_PARTY_NOTICES.md switch/mvmzplayer/THIRD_PARTY_NOTICES.md
+          cp README_KR.md artifact/switch/mvmzplayer/README_KR.md
+          cp README_EN.md artifact/switch/mvmzplayer/README_EN.md
+          cp LICENSE artifact/switch/mvmzplayer/LICENSE
+          cp THIRD_PARTY_NOTICES.md artifact/switch/mvmzplayer/THIRD_PARTY_NOTICES.md
 
           (
-            cd switch/mvmzplayer
+            cd artifact/switch/mvmzplayer
             sha256sum MVMZ_Launcher.nro runtime/MVMZ_MV_Player.nro runtime/MVMZ_MZ_Player.nro > SHA256SUMS.txt
           )
 
-          rm -f "$OUT"
-          zip -r -9 "$OUT" mvmz switch
+          (
+            cd artifact
+            zip -r -9 ../NX-MVMZPLAYER_CI.zip mvmz switch
+          )
 
-      - name: Verify V044 binary hashes
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "1682527AC3116C447B34586FC528981A40800296F7FCF6C1FCB9CFA4D7AF79E3  switch/mvmzplayer/MVMZ_Launcher.nro" > expected.sha256
-          echo "AE1A3D49258E7D8A209A3509A4DD04C313A77807565037E538D178172769ED33  switch/mvmzplayer/runtime/MVMZ_MV_Player.nro" >> expected.sha256
-          echo "97FCED4EABA82A1D2B2098AF9DACE1E3859486A4844E9F3B127E387DBEB6F64E  switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro" >> expected.sha256
-          sha256sum -c expected.sha256
-
-      - name: Upload build artifact
+      - name: Upload verification artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NX-MVMZPLAYER_Public_Beta_0.1
-          path: NX-MVMZPLAYER_Public_Beta_0.1.zip
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="v0.1.0-beta"
-          TITLE="NX-MVMZPLAYER Public Beta 0.1"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" NX-MVMZPLAYER_Public_Beta_0.1.zip --clobber
-            gh release edit "$TAG" \
-              --title "$TITLE" \
-              --prerelease \
-              --notes-file CHANGELOG.md
-          else
-            gh release create "$TAG" NX-MVMZPLAYER_Public_Beta_0.1.zip \
-              --target "$GITHUB_SHA" \
-              --title "$TITLE" \
-              --prerelease \
-              --notes-file CHANGELOG.md
-          fi
+          name: NX-MVMZPLAYER_CI
+          path: NX-MVMZPLAYER_CI.zip
