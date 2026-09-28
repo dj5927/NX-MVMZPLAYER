@@ -107,6 +107,7 @@ function sourceSize(ctx: RuntimeContext, logical: string) {
 
 function compileMvManifest(ctx: RuntimeContext, autoFingerprint: AutoFingerprint) {
   const startedAt = Date.now();
+  ctx.reportProgress?.('MV 사전 컴파일 중', 0, '맵 데이터 분석 시작');
   const animations = readJson(ctx, 'data/Animations.json', []);
   const commonEvents = readJson(ctx, 'data/CommonEvents.json', []);
   const tilesets = readJson(ctx, 'data/Tilesets.json', []);
@@ -231,6 +232,7 @@ function compileMvManifest(ctx: RuntimeContext, autoFingerprint: AutoFingerprint
     }
 
     maps[String(mapId)] = [...items.values()].sort((a, b) => a.priority - b.priority || a.order - b.order || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+    ctx.reportProgress?.('MV 사전 컴파일 중', Math.round(((mapIndex + 1) / Math.max(1, mapFiles.length)) * 100), `${mapIndex + 1}/${mapFiles.length} maps`);
     if ((mapIndex + 1) % 25 === 0) ctx.log(`[mv-warm-compile] maps ${mapIndex + 1}/${mapFiles.length}`);
   }
 
@@ -250,6 +252,7 @@ function compileMvManifest(ctx: RuntimeContext, autoFingerprint: AutoFingerprint
   };
   const deps = Object.values(maps).reduce((sum, list) => sum + list.length, 0);
   ctx.log(`[mv-warm-compile] complete | maps=${Object.keys(maps).length} dependencies=${deps} assets=${Object.keys(assetMeta).length} elapsedMs=${Date.now() - startedAt}`);
+  ctx.reportProgress?.('MV 사전 컴파일 완료', 100, `${Object.keys(maps).length} maps`);
   return manifest;
 }
 
