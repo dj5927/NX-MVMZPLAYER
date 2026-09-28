@@ -283,53 +283,60 @@ function installMZFontBridge(ctx: RuntimeContext) {
   ctx.log('[mz-font] ResourceFS FontManager bridge installed');
 }
 
-function installMZBitmapCanvasBridge(ctx: RuntimeContext) {
+function installMZBitmapLazyImageBridge(ctx: RuntimeContext) {
   const g: any = globalThis as any;
   const proto = g.Bitmap?.prototype;
-  if (!proto || proto.__mvmzCanvasUploadBridge) return;
-  proto.__mvmzCanvasUploadBridge = true;
-  const originalOnLoad = proto._onLoad;
+  if (!proto || proto.__mvmzLazyImageBridge) return;
+  proto.__mvmzLazyImageBridge = true;
+  const originalEnsureCanvas = proto._ensureCanvas;
   let logged = 0;
-
-  proto._onLoad = function() {
-    const image = this._image;
-    if (!image || !(Number(image.width) > 0) || !(Number(image.height) > 0)) {
-      return originalOnLoad.call(this);
-    }
-    try {
-      const canvas = g.document.createElement('canvas');
-      canvas.width = Math.max(1, Number(image.width) || 1);
-      canvas.height = Math.max(1, Number(image.height) || 1);
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('2D canvas unavailable');
-      context.drawImage(image, 0, 0);
-      if (g.Utils?.hasEncryptedImages?.()) {
-        try { URL.revokeObjectURL(image.src); } catch {}
+  if (typeof originalEnsureCanvas === 'function') {
+    proto._ensureCanvas = function(this: any, ...args: any[]) {
+      if (this._canvas) return;
+      const sourceImage = this._image;
+      const baseTexture = this._baseTexture;
+      const resource = baseTexture?.resource;
+      if (!sourceImage || !baseTexture || !resource) {
+        return originalEnsureCanvas.apply(this, args);
       }
-      try { (canvas as any).src = String(image.src || ''); } catch {}
-      this._canvas = canvas;
-      this._context = context;
-      // Some MZ plugins bypass Bitmap.image/canvas and call
-      // drawImage(bitmap._image, ...) directly. Keep the private image slot
-      // image-like by pointing it at the same CanvasShim used by the HOS-safe
-      // texture path.
-      this._image = canvas;
-      this._loadingState = 'loaded';
-      this._createBaseTexture(canvas);
-      this._callLoadListeners();
-      if (logged < 24) {
-        logged++;
-        ctx.log(`[mz-img] native Image -> Canvas texture | ${String(this._url || '(anonymous)')} ${canvas.width}x${canvas.height}`);
-        if (logged === 24) ctx.log('[mz-img] further Image -> Canvas logs suppressed');
-      }
-      return;
-    } catch (error) {
-      ctx.log(`[mz-img] Canvas texture bridge FAILED -> native fallback | ${String(this._url || '(anonymous)')} | ${String((error as any)?.stack ?? error)}`);
-      return originalOnLoad.call(this);
-    }
-  };
+      try {
+        const canvas = g.document.createElement('canvas');
+        canvas.width = Math.max(1, Number(sourceImage.width) || 1);
+        canvas.height = Math.max(1, Number(sourceImage.height) || 1);
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('2D canvas unavailable');
+        context.drawImage(sourceImage, 0, 0);
+        this._canvas = canvas;
+        this._context = context;
 
-  ctx.log('[mz-img] native Image -> OffscreenCanvas -> Pixi texture bridge installed');
+        try { if (resource.bitmap?.close) resource.bitmap.close(); } catch {}
+        try { resource.bitmap = null; } catch {}
+        try { resource._process = null; } catch {}
+        try { resource.createBitmap = false; } catch {}
+        resource.source = canvas;
+        try { resource.resize?.(canvas.width, canvas.height); } catch {}
+        try { resource.update?.(); } catch { baseTexture.update?.(); }
+        try { this._updateScaleMode?.(); } catch {}
+
+        if (logged < 12) {
+          logged++;
+          ctx.log(`[mz-img] lazy Canvas materialized with stable BaseTexture | ${String(this._url || '(anonymous)')} ${canvas.width}x${canvas.height}`);
+          if (logged === 12) ctx.log('[mz-img] further lazy Canvas materialization logs suppressed');
+        }
+        return;
+      } catch (error) {
+        this._canvas = null;
+        this._context = null;
+        ctx.log(`[mz-img] stable lazy Canvas FAILED -> stock fallback | ${String(this._url || '(anonymous)')} | ${String((error as any)?.stack ?? error)}`);
+        return originalEnsureCanvas.apply(this, args);
+      }
+    };
+  }
+
+  // Keep RPG Maker MZ's stock image lifetime: _onLoad creates the Pixi
+  // BaseTexture directly from the native Image, and Canvas is allocated only
+  // when a Bitmap drawing API/plugin actually asks for canvas/context.
+  ctx.log('[mz-img] stock lazy native Image -> Pixi path retained; Canvas materializes only on demand');
 }
 
 function installMZOffscreenPresenter(ctx: RuntimeContext, graphics: any) {
@@ -376,6 +383,21 @@ function installMZOffscreenPresenter(ctx: RuntimeContext, graphics: any) {
     // No physical 1280x720 letterbox offset is visible to filters or shaders.
     renderer.render(stage, rt, true);
 
+    // This presenter always renders through a RenderTexture, so Pixi's
+    // TextureGCSystem.postrender() skips its age/check counters. Advance only
+    // the texture GC clock once per outer application render so stale GPU
+    // textures can age out without altering nested/filter RenderTexture passes.
+    const textureGC = renderer.textureGC;
+    if (textureGC?.postrender) {
+      const wasRenderingToScreen = renderer.renderingToScreen;
+      try {
+        renderer.renderingToScreen = true;
+        textureGC.postrender();
+      } finally {
+        renderer.renderingToScreen = wasRenderingToScreen;
+      }
+    }
+
     const gl = renderer.gl;
     const fbSystem = renderer.framebuffer;
     const pixiFramebuffer = rt?.baseTexture?.framebuffer;
@@ -414,7 +436,7 @@ function installMZOffscreenPresenter(ctx: RuntimeContext, graphics: any) {
         fitX, fitY + fitHeight, fitX + fitWidth, fitY,
         gl.COLOR_BUFFER_BIT, gl.LINEAR
       );
-      presentError = Number(gl.getError?.() || 0);
+      if (presentLogs < 6) presentError = Number(gl.getError?.() || 0);
     } finally {
       try { gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); } catch {}
       try { gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null); } catch {}
@@ -441,7 +463,7 @@ function installMZOffscreenPresenter(ctx: RuntimeContext, graphics: any) {
     }
   };
 
-  ctx.log('[mz-gfx] logical offscreen -> physical WebGL2 blit presenter installed');
+  ctx.log('[mz-gfx] logical offscreen -> physical WebGL2 blit presenter installed | textureGC outer-frame clock restored');
 }
 
 function installMZSceneDiagnostics(ctx: RuntimeContext) {
@@ -1009,12 +1031,15 @@ function installMZDamageBitmapCache(ctx: RuntimeContext) {
 
   const trimCache = () => {
     while (cache.size > MAX_ENTRIES) {
-      const first = cache.keys().next();
-      if (first.done) break;
-      const key = first.value;
-      const bitmap = cache.get(key);
-      cache.delete(key);
-      try { bitmap?.destroy?.(); } catch {}
+      let removed = false;
+      for (const [key, bitmap] of cache) {
+        if (Number(bitmap?.__mvmzDamageRefs || 0) > 0) continue;
+        cache.delete(key);
+        try { bitmap?.destroy?.(); } catch {}
+        removed = true;
+        break;
+      }
+      if (!removed) break;
     }
   };
 
@@ -1043,6 +1068,16 @@ function installMZDamageBitmapCache(ctx: RuntimeContext) {
   const addSharedChild = (owner: any, bitmap: any, width: number, height: number) => {
     const sprite = new g.Sprite();
     sprite.bitmap = bitmap;
+    bitmap.__mvmzDamageRefs = Number(bitmap.__mvmzDamageRefs || 0) + 1;
+    const originalSpriteDestroy = sprite.destroy;
+    let refReleased = false;
+    sprite.destroy = function(this: any, ...args: any[]) {
+      if (!refReleased) {
+        refReleased = true;
+        bitmap.__mvmzDamageRefs = Math.max(0, Number(bitmap.__mvmzDamageRefs || 0) - 1);
+      }
+      return originalSpriteDestroy?.apply(this, args);
+    };
     sprite.anchor.x = 0.5;
     sprite.anchor.y = 1;
     sprite.y = -40;
@@ -1781,8 +1816,11 @@ function installMZHighWaterTransitionReclaim(ctx: RuntimeContext) {
       optionalPixels -= item.pixels;
       evictedPixels += item.pixels;
       evicted++;
-      try { item.bitmap.destroy?.(); } catch (error) {
-        ctx.log(`[mz-mem] cache bitmap destroy FAILED | ${item.url} | ${String((error as any)?.stack ?? error)}`);
+      try {
+        const base = item.bitmap?._baseTexture || item.bitmap?.baseTexture;
+        base?.dispose?.();
+      } catch (error) {
+        ctx.log(`[mz-mem] cache bitmap GPU dispose FAILED | ${item.url} | ${String((error as any)?.stack ?? error)}`);
       }
     }
     return {
@@ -1839,17 +1877,19 @@ function installMZHighWaterTransitionReclaim(ctx: RuntimeContext) {
 
       let earlyDestroyed = false;
       const previous = this._previousScene;
+      let ignoredPrevious: any = null;
       if (previous) {
         try {
           previous.destroy?.();
           this._previousScene = null;
           earlyDestroyed = true;
+          ignoredPrevious = previous;
         } catch (error) {
           ctx.log(`[mz-mem] early previous-scene destroy FAILED | ${oldName}->${nextName} | ${String((error as any)?.stack ?? error)}`);
         }
       }
 
-      const cache = trimUnusedImageCache(before.used, previous);
+      const cache = trimUnusedImageCache(before.used, ignoredPrevious);
       try { g.Graphics?.effekseer?.stopAll?.(); } catch {}
       try { g.Graphics?.app?.renderer?.textureGC?.run?.(); } catch {}
       try { if (typeof g.gc === 'function') g.gc(); } catch {}
@@ -1902,7 +1942,7 @@ function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
         ctx.log('[mz-host] Utils.isLocal -> true via ResourceFS/XHR local runtime');
       }
       installMZFontBridge(ctx);
-      installMZBitmapCanvasBridge(ctx);
+      installMZBitmapLazyImageBridge(ctx);
       installMZGraphicsCompat(ctx);
       installMZPixiCreateDiagnostics(ctx);
       installMZAudioCompat(ctx);

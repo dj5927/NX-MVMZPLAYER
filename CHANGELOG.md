@@ -4,6 +4,10 @@
 
 ### English
 
+- V053 Switch optimization pass: local game assets now use bounded asynchronous SD reads instead of microtask-wrapped synchronous reads. ResourceFS caches resolved paths, Image.src resolves directly to local sdmc paths, and MV regular/encrypted image reads use the async path under the existing decode gate.
+- MZ 0.53.0 restores lazy Image/Canvas behavior while preserving BaseTexture identity when Canvas is materialized, restores Pixi texture-GC aging under the logical RenderTexture presenter, and changes high-water optional-cache eviction from destructive Bitmap destroy to GPU dispose + reload-safe cache removal.
+- Runtime overhead and safety: GL trace now has a real call budget, periodic framebuffer readPixels diagnostics are opt-in, pointer overlays recreate after scene destruction, live damage-number bitmaps are protected from LRU destruction, MV temporary ImageBitmap cleanup is finally-safe, and logger SD metadata/backpressure is bounded.
+
 - V052 transition high-water stabilization: after V051 device testing showed native memory staying around 1.35-1.45 GiB and the process terminating on a later Scene_Map -> Scene_Map transition without a JS fatal, MZ now performs a one-shot reclaim only for heavy Map/Battle scene replacements when native usage is at least 1280 MiB.
 - Under that high-water condition, MZ destroys the finished previous scene before creating the replacement scene, skips the unnecessary stock background snapshot for Map -> Map transfers, and trims only non-system ImageManager cache bitmaps that are not referenced by the current/next scene graph. The cache trim is LRU and keeps 24 MP optional cache normally, 14 MP above 1400 MiB, and 8 MP above 1500 MiB.
 - MZ heartbeat now reports the real MZ ImageManager cache count/pixels instead of the MV-only cache path. Warm/compiler/raw .mvmz_opt remain disabled.
@@ -37,6 +41,10 @@
 - Launcher game-name mapping, thumbnail view, 5x2 grid and Start+Select Yes/No UI from 0.5.0 are retained.
 
 ### 한국어
+
+- V053 Switch 최적화: 로컬 게임 자산을 microtask 안의 동기 read가 아니라 제한된 비동기 SD read로 읽습니다. ResourceFS 경로 캐시, Image.src의 direct sdmc 경로, MV 일반/암호화 이미지 async read를 적용했습니다.
+- MZ 0.53.0은 Image/Canvas lazy 동작을 복구하면서 Canvas가 실제 필요해질 때 기존 BaseTexture 정체성을 유지합니다. logical RenderTexture presenter 때문에 멈춰 있던 Pixi texture-GC aging도 외부 프레임 기준으로 복구하고, high-water optional cache 정리는 Bitmap 파괴 대신 GPU dispose + reload-safe cache 제거 방식으로 바꿨습니다.
+- 상시 오버헤드/안전성: GL trace 호출 예산 제한, framebuffer readPixels 기본 비활성, Scene 파괴 후 pointer overlay 재생성, 사용 중 damage bitmap 보호, MV ImageBitmap finally 정리, logger SD metadata/실패 버퍼 제한을 추가했습니다.
 
 - V052 전환 high-water 안정화: V051 실기에서 native memory가 약 1.35~1.45GiB에 장시간 머물고 이후 Scene_Map -> Scene_Map 전환 시작 직후 JS FATAL 없이 종료된 것을 확인해, MZ는 native 사용량이 1280MiB 이상일 때 Map/Battle 대형 Scene 교체에 한해 1회 메모리 회수를 수행합니다.
 - high-water 전환에서는 종료된 이전 Scene을 새 Scene 생성 전에 조기 파괴하고, Map -> Map 전환에서 불필요한 stock background snapshot을 생략합니다. 또한 시스템 이미지는 건드리지 않고 현재/다음 Scene graph에서 참조되지 않는 ImageManager cache Bitmap만 LRU로 정리합니다. optional cache 예산은 기본 24MP, 1400MiB 이상 14MP, 1500MiB 이상 8MP입니다.

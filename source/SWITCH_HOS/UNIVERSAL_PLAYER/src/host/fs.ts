@@ -1,6 +1,24 @@
 import type { LogFn } from '../types';
 
 const decoder = new TextDecoder();
+const ASYNC_READ_LIMIT = 3;
+let asyncReadsActive = 0;
+const asyncReadWaiters: Array<() => void> = [];
+
+export async function readFileAsyncBounded(path: string) {
+  if (asyncReadsActive >= ASYNC_READ_LIMIT) {
+    await new Promise<void>(resolve => asyncReadWaiters.push(resolve));
+  } else {
+    asyncReadsActive++;
+  }
+  try {
+    return await Switch.readFile(path);
+  } finally {
+    const next = asyncReadWaiters.shift();
+    if (next) next();
+    else asyncReadsActive--;
+  }
+}
 
 export function normalizeRelativePath(input: string) {
   let value = String(input ?? '').replace(/\\/g, '/').split('#')[0].split('?')[0];
@@ -22,6 +40,7 @@ export function isAbsoluteResource(url: string) {
 
 export class ResourceFS {
   private dirCache = new Map<string, Map<string, string>>();
+  private resolveCache = new Map<string, string>();
   private pathAliases = new Map<string, string>();
   private pathAliasesFolded = new Map<string, string>();
   private aliasLog = new Set<string>();
@@ -104,10 +123,18 @@ export class ResourceFS {
     const raw = String(relativeOrAbsolute);
     if (raw.startsWith('sdmc:') || raw.startsWith('romfs:')) return raw;
     const rel = normalizeRelativePath(raw);
+    const cached = this.resolveCache.get(rel);
+    if (cached) return cached;
     const mapped = this.resolveAlias(rel);
-    if (mapped) return mapped;
+    if (mapped) {
+      this.resolveCache.set(rel, mapped);
+      return mapped;
+    }
     const exact = `${this.root}/${rel}`;
-    if (this.existsAbsolute(exact)) return exact;
+    if (this.existsAbsolute(exact)) {
+      this.resolveCache.set(rel, exact);
+      return exact;
+    }
 
     let current = this.root;
     for (const segment of rel.split('/')) {
@@ -116,6 +143,7 @@ export class ResourceFS {
       if (!actual) return exact;
       current = `${current}/${actual}`;
     }
+    this.resolveCache.set(rel, current);
     return current;
   }
 
@@ -126,6 +154,13 @@ export class ResourceFS {
   readBuffer(relativeOrAbsolute: string) {
     const path = this.resolve(relativeOrAbsolute);
     const buffer = Switch.readFileSync(path);
+    if (!buffer) throw new Error(`File not found: ${path}`);
+    return buffer;
+  }
+
+  async readBufferAsync(relativeOrAbsolute: string) {
+    const path = this.resolve(relativeOrAbsolute);
+    const buffer = await readFileAsyncBounded(path);
     if (!buffer) throw new Error(`File not found: ${path}`);
     return buffer;
   }
@@ -148,5 +183,6 @@ export class ResourceFS {
 
   invalidate() {
     this.dirCache.clear();
+    this.resolveCache.clear();
   }
 }

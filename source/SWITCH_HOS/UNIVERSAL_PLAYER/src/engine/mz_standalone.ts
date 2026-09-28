@@ -55,7 +55,7 @@ export function installMZStandaloneHostPump(ctx: RuntimeContext) {
         if (g.__mvmzMzStandaloneLoopEnabled) {
           const sceneName = String(g.SceneManager?._scene?.constructor?.name ?? 'none');
           const sceneChanged = sceneName !== lastSceneName;
-          if (sceneChanged || activeFrames % 120 === 0) {
+          if (g.__mvmzFramebufferDiagnostics === true && (sceneChanged || activeFrames % 120 === 0)) {
             lastSceneName = sceneName;
             try {
               const gl = app.renderer?.gl;
