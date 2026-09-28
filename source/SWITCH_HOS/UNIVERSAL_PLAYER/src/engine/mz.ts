@@ -1186,4 +1186,806 @@ function installMZEventAssetPrewarm(ctx: RuntimeContext) {
       else bitmap.addLoadListener?.(ready);
     } catch (error) {
       completed.add(item.key);
-      ctx.log(`[mz-asset-warm] image preload FAILED | ${item.key} | ${String((error as any)?.message ?
+      ctx.log(`[mz-asset-warm] image preload FAILED | ${item.key} | ${String((error as any)?.message ?? error)}`);
+    }
+  };
+
+  const startAnimation = (item: Extract<WarmItem, { type: 'animation' }>) => {
+    try {
+      const animation = g.$dataAnimations?.[item.id];
+      if (animation) {
+        const effectName = String(animation.effectName || '');
+        if (effectName) g.EffectManager?.load?.(effectName);
+        for (const timing of animation.soundTimings || []) {
+          const name = String(timing?.se?.name || '');
+          if (name) enqueueSe(name, `${item.source}:anim${item.id}`);
+        }
+      }
+    } catch (error) {
+      ctx.log(`[mz-asset-warm] animation preload FAILED | id=${item.id} | ${String((error as any)?.message ?? error)}`);
+    }
+    completed.add(item.key);
+  };
+
+  const startSe = (item: Extract<WarmItem, { type: 'se' }>) => {
+    try { g.__mvmzMZPrewarmSe?.(item.name); } catch {}
+    completed.add(item.key);
+  };
+
+  const pump = () => {
+    pumpArmed = false;
+    let imageStarted = 0;
+    let lightweightStarted = 0;
+    while (queue.length && (imageStarted < 1 || lightweightStarted < 2)) {
+      const item = queue.shift()!;
+      if (completed.has(item.key)) continue;
+      if (item.type === 'image') {
+        if (imageStarted >= 1) { queue.unshift(item); break; }
+        imageStarted++;
+        startImage(item);
+      } else if (item.type === 'animation') {
+        if (lightweightStarted >= 2) { queue.unshift(item); break; }
+        lightweightStarted++;
+        startAnimation(item);
+      } else {
+        if (lightweightStarted >= 2) { queue.unshift(item); break; }
+        lightweightStarted++;
+        startSe(item);
+      }
+    }
+    if (queue.length) schedulePump();
+  };
+
+  const schedulePump = () => {
+    if (pumpArmed) return;
+    pumpArmed = true;
+    hostRaf(pump);
+  };
+
+  const enqueueImage = (kind: string, name: any, source: string) => {
+    const clean = String(name || '').trim();
+    if (!clean) return false;
+    const key = `img:${kind}:${clean}`;
+    if (queued.has(key) || completed.has(key)) return false;
+    queued.add(key);
+    queue.push({ type: 'image', kind, name: clean, key, source });
+    schedulePump();
+    return true;
+  };
+
+  const enqueueAnimation = (value: any, source: string) => {
+    const id = Number(value || 0);
+    if (!Number.isFinite(id) || id <= 0 || !g.$dataAnimations?.[id]) return false;
+    const key = `anim:${id}`;
+    if (queued.has(key) || completed.has(key)) return false;
+    queued.add(key);
+    queue.push({ type: 'animation', id, key, source });
+    schedulePump();
+    return true;
+  };
+
+  const enqueueSe = (name: any, source: string) => {
+    const clean = String(name || '').trim();
+    if (!clean) return false;
+    const key = `se:${clean}`;
+    if (queued.has(key) || completed.has(key)) return false;
+    queued.add(key);
+    queue.push({ type: 'se', name: clean, key, source });
+    schedulePump();
+    return true;
+  };
+
+  const scanList = (list: any[], start: number, maxCommands: number, source: string, imageLimit = 10, animationLimit = 8, seLimit = 12) => {
+    if (!Array.isArray(list) || !list.length) return { images: 0, animations: 0, se: 0 };
+    let images = 0;
+    let animations = 0;
+    let se = 0;
+    const from = Math.max(0, Math.floor(Number(start) || 0));
+    const end = Math.min(list.length, from + Math.max(1, maxCommands));
+    for (let i = from; i < end; i++) {
+      const command = list[i];
+      const p = command?.parameters || [];
+      switch (Number(command?.code || 0)) {
+        case 101:
+          if (images < imageLimit && enqueueImage('face', p[0], source)) images++;
+          break;
+        case 231:
+          if (images < imageLimit && enqueueImage('picture', p[1], source)) images++;
+          break;
+        case 322:
+          if (images < imageLimit && enqueueImage('character', p[1], source)) images++;
+          if (images < imageLimit && enqueueImage('face', p[3], source)) images++;
+          if (images < imageLimit && enqueueImage('svactor', p[5], source)) images++;
+          break;
+        case 323:
+          if (images < imageLimit && enqueueImage('character', p[1], source)) images++;
+          break;
+        case 283:
+          if (images < imageLimit && enqueueImage('battleback1', p[0], source)) images++;
+          if (images < imageLimit && enqueueImage('battleback2', p[1], source)) images++;
+          break;
+        case 284:
+          if (images < imageLimit && enqueueImage('parallax', p[0], source)) images++;
+          break;
+        case 212:
+        case 337:
+          if (animations < animationLimit && enqueueAnimation(p[1], source)) animations++;
+          break;
+        case 250:
+          if (se < seLimit && enqueueSe(p[0]?.name, source)) se++;
+          break;
+      }
+      if (images >= imageLimit && animations >= animationLimit && se >= seLimit) break;
+    }
+    if ((images || animations || se) && planLogs < 20) {
+      planLogs++;
+      ctx.log(`[mz-asset-warm] plan | source=${source} commands=${end - from} images=${images} animations=${animations} se=${se} queue=${queue.length}`);
+      if (planLogs === 20) ctx.log('[mz-asset-warm] further plan logs suppressed');
+    }
+    return { images, animations, se };
+  };
+
+  const warmPartyCombat = (source: string) => {
+    try { g.__mvmzMZPrewarmDamageDigits?.(); } catch {}
+    const ids = new Set<number>();
+    try {
+      for (const actor of g.$gameParty?.battleMembers?.() || []) {
+        try {
+          const a1 = Number(actor.attackAnimationId1?.() || 0);
+          const a2 = Number(actor.attackAnimationId2?.() || 0);
+          if (a1 > 0) ids.add(a1);
+          if (a2 > 0) ids.add(a2);
+        } catch {}
+        try {
+          for (const skill of actor.skills?.() || []) {
+            const id = Number(skill?.animationId || 0);
+            if (id > 0) ids.add(id);
+            else if (id < 0) {
+              const a1 = Number(actor.attackAnimationId1?.() || 0);
+              const a2 = Number(actor.attackAnimationId2?.() || 0);
+              if (a1 > 0) ids.add(a1);
+              if (a2 > 0) ids.add(a2);
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+    let added = 0;
+    for (const id of Array.from(ids).slice(0, 20)) if (enqueueAnimation(id, source)) added++;
+    if (added && planLogs < 20) {
+      planLogs++;
+      ctx.log(`[mz-map-warm] party battle animations queued | source=${source} count=${added}`);
+    }
+  };
+
+  const warmNearbyEvents = (scene: any, source: string) => {
+    const serial = ++mapScanSerial;
+    hostRaf(() => {
+      if (serial !== mapScanSerial || g.SceneManager?._scene !== scene) return;
+      try {
+        const px = Number(g.$gamePlayer?.x || 0);
+        const py = Number(g.$gamePlayer?.y || 0);
+        const events = (g.$gameMap?.events?.() || [])
+          .filter((event: any) => event && Number(event._pageIndex) >= 0)
+          .map((event: any) => ({ event, distance: Math.abs(Number(event.x || 0) - px) + Math.abs(Number(event.y || 0) - py) }))
+          .filter((entry: any) => entry.distance <= 8)
+          .sort((a: any, b: any) => a.distance - b.distance)
+          .slice(0, 4);
+        let imageBudget = 8;
+        let animationBudget = 10;
+        let seBudget = 12;
+        for (const entry of events) {
+          if (imageBudget <= 0 && animationBudget <= 0 && seBudget <= 0) break;
+          const event = entry.event;
+          let list: any[] = [];
+          try { list = event.list?.() || []; } catch {}
+          const result = scanList(list, 0, 48, `${source}:event${Number(event.eventId?.() || event._eventId || 0)}`, imageBudget, animationBudget, seBudget);
+          imageBudget -= result.images;
+          animationBudget -= result.animations;
+          seBudget -= result.se;
+        }
+        warmPartyCombat(`${source}:party`);
+      } catch (error) {
+        ctx.log(`[mz-map-warm] nearby scan FAILED | ${String((error as any)?.message ?? error)}`);
+      }
+    });
+  };
+
+  const originalSetup = interpreterProto.setup;
+  if (typeof originalSetup === 'function') {
+    interpreterProto.setup = function(this: any, list: any[], eventId: number) {
+      const result = originalSetup.apply(this, arguments as any);
+      this.__mvmzWarmLastScanIndex = -999;
+      try { scanList(list, 0, 56, `interpreter:${Number(eventId || 0)}`, 10, 8, 12); } catch {}
+      return result;
+    };
+  }
+
+  const originalExecute = interpreterProto.executeCommand;
+  if (typeof originalExecute === 'function') {
+    interpreterProto.executeCommand = function(this: any) {
+      try {
+        const index = Number(this._index || 0);
+        const last = Number(this.__mvmzWarmLastScanIndex ?? -999);
+        if (Array.isArray(this._list) && index - last >= 8) {
+          this.__mvmzWarmLastScanIndex = index;
+          scanList(this._list, index, 48, `interpreter:${Number(this._eventId || 0)}@${index}`, 8, 6, 10);
+        }
+      } catch {}
+      return originalExecute.apply(this, arguments as any);
+    };
+  }
+
+  const originalMapTransfer = sceneMapProto.onTransfer;
+  if (typeof originalMapTransfer === 'function') {
+    sceneMapProto.onTransfer = function(this: any) {
+      const result = originalMapTransfer.apply(this, arguments as any);
+      queue.length = 0;
+      queued.clear();
+      completed.clear();
+      mapScanSerial++;
+      ctx.log('[mz-asset-warm] cache tracking reset after map transfer');
+      return result;
+    };
+  }
+
+  const originalMapStart = sceneMapProto.start;
+  if (typeof originalMapStart === 'function') {
+    sceneMapProto.start = function(this: any) {
+      const result = originalMapStart.apply(this, arguments as any);
+      try {
+        lastMapScanX = Number(g.$gamePlayer?.x || 0);
+        lastMapScanY = Number(g.$gamePlayer?.y || 0);
+        warmNearbyEvents(this, 'map-start');
+      } catch {}
+      return result;
+    };
+  }
+
+  const originalMapUpdate = sceneMapProto.update;
+  if (typeof originalMapUpdate === 'function') {
+    sceneMapProto.update = function(this: any) {
+      const result = originalMapUpdate.apply(this, arguments as any);
+      try {
+        mapUpdateCounter++;
+        if (mapUpdateCounter % 120 === 0 && !g.$gameMessage?.isBusy?.() && !g.SceneManager?.isSceneChanging?.()) {
+          const px = Number(g.$gamePlayer?.x || 0);
+          const py = Number(g.$gamePlayer?.y || 0);
+          const moved = !Number.isFinite(lastMapScanX) || Math.abs(px - lastMapScanX) + Math.abs(py - lastMapScanY) >= 4;
+          if (moved) {
+            lastMapScanX = px;
+            lastMapScanY = py;
+            warmNearbyEvents(this, 'map-idle');
+          }
+        }
+      } catch {}
+      return result;
+    };
+  }
+
+  g.__mvmzMZWarmAnimation = enqueueAnimation;
+  g.__mvmzMZWarmImage = enqueueImage;
+  ctx.log('[mz-asset-warm] generic event image / map animation lookahead installed | imagePerFrame=1 nearbyRadius=8');
+}
+
+function installMZBattlePrewarm(ctx: RuntimeContext) {
+  const g: any = globalThis as any;
+  const proto = g.Scene_Battle?.prototype;
+  if (!proto || typeof proto.create !== 'function' || proto.create.__mvmzBattleWarm) return;
+  const originalCreate = proto.create;
+  let planSerial = 0;
+
+  const addAnimation = (set: Set<number>, value: any) => {
+    const id = Number(value || 0);
+    if (Number.isFinite(id) && id > 0 && g.$dataAnimations?.[id]) set.add(id);
+  };
+  const addSkillAnimation = (set: Set<number>, skill: any, actor?: any) => {
+    if (!skill) return;
+    const id = Number(skill.animationId || 0);
+    if (id > 0) addAnimation(set, id);
+    else if (id < 0 && actor) {
+      try { addAnimation(set, actor.attackAnimationId1?.()); } catch {}
+      try { addAnimation(set, actor.attackAnimationId2?.()); } catch {}
+    } else if (id < 0) {
+      addAnimation(set, 1);
+    }
+  };
+  const collectPlan = () => {
+    const animationIds = new Set<number>();
+    try {
+      for (const actor of g.$gameParty?.battleMembers?.() || []) {
+        try { addAnimation(animationIds, actor.attackAnimationId1?.()); } catch {}
+        try { addAnimation(animationIds, actor.attackAnimationId2?.()); } catch {}
+        try {
+          for (const skill of actor.skills?.() || []) addSkillAnimation(animationIds, skill, actor);
+        } catch {}
+      }
+    } catch {}
+    try {
+      for (const enemy of g.$gameTroop?.members?.() || []) {
+        const data = enemy?.enemy?.();
+        for (const action of data?.actions || []) addSkillAnimation(animationIds, g.$dataSkills?.[Number(action?.skillId || 0)]);
+      }
+    } catch {}
+    const selectedIds = Array.from(animationIds).slice(0, 32);
+    const effects = new Set<string>();
+    const sounds = new Set<string>();
+    for (const id of selectedIds) {
+      const animation = g.$dataAnimations?.[id];
+      const effectName = String(animation?.effectName || '');
+      if (effectName) effects.add(effectName);
+      for (const timing of animation?.soundTimings || []) {
+        const name = String(timing?.se?.name || '');
+        if (name) sounds.add(name);
+      }
+    }
+    return {
+      animationIds: selectedIds,
+      effects: Array.from(effects).slice(0, 12),
+      sounds: Array.from(sounds).slice(0, 24)
+    };
+  };
+  const prewarm = () => {
+    const serial = ++planSerial;
+    const plan = collectPlan();
+    ctx.log(`[mz-battle-warm] plan | animations=${plan.animationIds.length} effects=${plan.effects.length} se=${plan.sounds.length}`);
+    for (const name of plan.effects) {
+      try { g.EffectManager?.load?.(name); } catch (error) {
+        ctx.log(`[mz-battle-warm] effect preload FAILED | ${name} | ${String((error as any)?.message ?? error)}`);
+      }
+    }
+    const queue = plan.sounds.slice();
+    const pump = () => {
+      if (serial !== planSerial || !queue.length) return;
+      for (let i = 0; i < 2 && queue.length; i++) {
+        const name = queue.shift()!;
+        try { g.__mvmzMZPrewarmSe?.(name); } catch {}
+      }
+      if (queue.length) {
+        const raf = g.__mvmzHostRequestAnimationFrame || g.requestAnimationFrame;
+        if (typeof raf === 'function') raf(pump);
+        else setTimeout(pump, 16);
+      }
+    };
+    pump();
+  };
+
+  const wrappedCreate = function(this: any, ...args: any[]) {
+    const result = originalCreate.apply(this, args);
+    try { prewarm(); } catch (error) {
+      ctx.log(`[mz-battle-warm] plan FAILED | ${String((error as any)?.stack ?? error)}`);
+    }
+    return result;
+  };
+  wrappedCreate.__mvmzBattleWarm = true;
+  proto.create = wrappedCreate;
+  ctx.log('[mz-battle-warm] generic animation effect/SE prewarm installed');
+}
+
+function mzEffectMemoryBrief() {
+  try {
+    const mem: any = Switch.memoryUsage();
+    const mib = (value: number) => (Number(value || 0) / 1048576).toFixed(1);
+    return ` heapMiB=${mib(mem.usedHeapSize)} externalMiB=${mib(mem.externalMemory)} nativeMiB=${mib(mem.nativeHeapUsed)}/${mib(mem.nativeHeapTotal)}`;
+  } catch {
+    return '';
+  }
+}
+
+function installMZEffectDiagnostics(ctx: RuntimeContext) {
+  const g: any = globalThis as any;
+  const manager = g.EffectManager;
+  if (!manager || manager.__mvmzEffectDiagnostics) return;
+  manager.__mvmzEffectDiagnostics = true;
+  const starts = new Map<string, number>();
+  let hitLogs = 0;
+  const now = () => Number(g.performance?.now?.() ?? Date.now());
+
+  if (typeof manager.load === 'function') {
+    const originalLoad = manager.load;
+    manager.load = function(filename: string) {
+      const name = String(filename || '');
+      if (name) {
+        try {
+          const url = String(this.makeUrl?.(name) || name);
+          const cached = this._cache?.[url];
+          if (cached?.isLoaded && hitLogs < 20) {
+            hitLogs++;
+            ctx.log(`[mz-effect] CACHE HIT | ${url}${mzEffectMemoryBrief()}`);
+            if (hitLogs === 20) ctx.log('[mz-effect] further cache-hit logs suppressed');
+          }
+        } catch {}
+      }
+      return originalLoad.call(this, filename);
+    };
+  }
+
+  if (typeof manager.startLoading === 'function') {
+    const originalStartLoading = manager.startLoading;
+    manager.startLoading = function(url: string) {
+      const key = String(url || '');
+      starts.set(key, now());
+      ctx.log(`[mz-effect] START | ${key}${mzEffectMemoryBrief()}`);
+      try {
+        return originalStartLoading.call(this, url);
+      } catch (error) {
+        starts.delete(key);
+        ctx.log(`[mz-effect] START FAILED | ${key} | ${String((error as any)?.stack ?? error)}${mzEffectMemoryBrief()}`);
+        throw error;
+      }
+    };
+  }
+
+  if (typeof manager.onLoad === 'function') {
+    const originalOnLoad = manager.onLoad;
+    manager.onLoad = function(url: string, ...args: any[]) {
+      const key = String(url || '');
+      const stamp = starts.get(key);
+      const elapsed = stamp == null ? -1 : Math.max(0, now() - stamp);
+      starts.delete(key);
+      ctx.log(`[mz-effect] READY | ${key} elapsedMs=${elapsed < 0 ? 'unknown' : elapsed.toFixed(1)}${mzEffectMemoryBrief()}`);
+      return originalOnLoad.call(this, url, ...args);
+    };
+  }
+
+  if (typeof manager.onError === 'function') {
+    const originalOnError = manager.onError;
+    manager.onError = function(url: string, ...args: any[]) {
+      const key = String(url || '');
+      const stamp = starts.get(key);
+      const elapsed = stamp == null ? -1 : Math.max(0, now() - stamp);
+      starts.delete(key);
+      ctx.log(`[mz-effect] ERROR | ${key} elapsedMs=${elapsed < 0 ? 'unknown' : elapsed.toFixed(1)}${mzEffectMemoryBrief()}`);
+      return originalOnError.call(this, url, ...args);
+    };
+  }
+
+  if (typeof manager.clear === 'function') {
+    const originalClear = manager.clear;
+    manager.clear = function(...args: any[]) {
+      const count = Object.keys(this._cache || {}).length;
+      starts.clear();
+      ctx.log(`[mz-effect] CLEAR | cached=${count}${mzEffectMemoryBrief()}`);
+      return originalClear.apply(this, args);
+    };
+  }
+
+  ctx.log('[mz-effect] first-use load timing diagnostics installed | preload=off');
+}
+
+function installMZHighWaterTransitionReclaim(ctx: RuntimeContext) {
+  const g: any = globalThis as any;
+  const manager = g.SceneManager;
+  const imageManager = g.ImageManager;
+  const mapProto = g.Scene_Map?.prototype;
+  if (!manager || !imageManager || manager.__mvmzHighWaterTransitionReclaim) return;
+  manager.__mvmzHighWaterTransitionReclaim = true;
+
+  const MIB = 1048576;
+  const compatMemory = g.__mvmzCompatApi?.config?.mzMemory || {};
+  const fullWaterMiB = Math.max(512, Number(compatMemory.fullWaterMiB || 1280));
+  const preemptiveWaterMiB = Number.isFinite(Number(compatMemory.preemptiveWaterMiB))
+    ? Math.max(512, Number(compatMemory.preemptiveWaterMiB))
+    : Number.POSITIVE_INFINITY;
+  const HIGH_WATER = fullWaterMiB * MIB;
+  const PREEMPTIVE_WATER = preemptiveWaterMiB * MIB;
+  const STRONG_WATER = 1400 * MIB;
+  const CRITICAL_WATER = 1500 * MIB;
+  const preemptiveTransitions = new Set<string>(
+    Array.isArray(compatMemory.preemptiveTransitions)
+      ? compatMemory.preemptiveTransitions.map((value: any) => String(value))
+      : []
+  );
+  const now = () => Number(g.performance?.now?.() ?? Date.now());
+  const memory = () => {
+    try {
+      const mem: any = Switch.memoryUsage();
+      return {
+        used: Number(mem.nativeHeapUsed || 0),
+        total: Number(mem.nativeHeapTotal || 0),
+        arena: Number(mem.nativeHeapArena || 0),
+        free: Number(mem.nativeHeapFree || 0),
+        heap: Number(mem.usedHeapSize || 0),
+        external: Number(mem.externalMemory || 0),
+        malloced: Number(mem.mallocedMemory || 0)
+      };
+    } catch {
+      return { used: 0, total: 0, arena: 0, free: 0, heap: 0, external: 0, malloced: 0 };
+    }
+  };
+  const mib = (value: number) => (Number(value || 0) / MIB).toFixed(1);
+
+  const originalLoadBitmapFromUrl = imageManager.loadBitmapFromUrl;
+  if (typeof originalLoadBitmapFromUrl === 'function' && !originalLoadBitmapFromUrl.__mvmzTouchTracked) {
+    const wrappedLoadBitmapFromUrl = function(this: any, url: string) {
+      const bitmap = originalLoadBitmapFromUrl.call(this, url);
+      if (bitmap) {
+        try {
+          bitmap.__mvmzLastTouch = now();
+          bitmap.__mvmzCacheUrl = String(url || '');
+        } catch {}
+      }
+      return bitmap;
+    };
+    wrappedLoadBitmapFromUrl.__mvmzTouchTracked = true;
+    imageManager.loadBitmapFromUrl = wrappedLoadBitmapFromUrl;
+  }
+
+  const collectBitmapRefs = (ignoredScene?: any) => {
+    const bitmaps = new Set<any>();
+    const baseTextures = new Set<any>();
+    const visited = new Set<any>();
+    const rememberBitmap = (bitmap: any) => {
+      if (!bitmap || typeof bitmap !== 'object') return;
+      bitmaps.add(bitmap);
+      try {
+        const base = bitmap._baseTexture || bitmap.baseTexture;
+        if (base) baseTextures.add(base);
+      } catch {}
+    };
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object' || visited.has(node)) return;
+      visited.add(node);
+      try { rememberBitmap(node.bitmap); } catch {}
+      try { rememberBitmap(node._bitmap); } catch {}
+      try { rememberBitmap(node.contents); } catch {}
+      try { rememberBitmap(node.contentsBack); } catch {}
+      try { rememberBitmap(node.windowskin); } catch {}
+      try { rememberBitmap(node._windowskin); } catch {}
+      try {
+        const base = node.texture?.baseTexture;
+        if (base) baseTextures.add(base);
+      } catch {}
+      const children = Array.isArray(node.children) ? node.children : [];
+      for (const child of children) walk(child);
+    };
+    if (manager._scene !== ignoredScene) walk(manager._scene);
+    if (manager._nextScene !== ignoredScene) walk(manager._nextScene);
+    if (manager._previousScene !== ignoredScene) walk(manager._previousScene);
+    return { bitmaps, baseTextures };
+  };
+
+  const trimUnusedImageCache = (usedBefore: number, ignoredScene?: any) => {
+    const cache = imageManager._cache || {};
+    const refs = collectBitmapRefs(ignoredScene);
+    const candidates: Array<{ url: string; bitmap: any; pixels: number; touch: number }> = [];
+    let totalPixels = 0;
+    let protectedPixels = 0;
+    for (const url of Object.keys(cache)) {
+      const bitmap = cache[url];
+      if (!bitmap) continue;
+      const width = Math.max(0, Number(bitmap.width || bitmap._canvas?.width || 0));
+      const height = Math.max(0, Number(bitmap.height || bitmap._canvas?.height || 0));
+      const pixels = width * height;
+      totalPixels += pixels;
+      let protectedNow = false;
+      try {
+        const base = bitmap._baseTexture || bitmap.baseTexture;
+        protectedNow = refs.bitmaps.has(bitmap) || (!!base && refs.baseTextures.has(base));
+      } catch {
+        protectedNow = refs.bitmaps.has(bitmap);
+      }
+      try {
+        if (!protectedNow && typeof bitmap.isReady === 'function' && !bitmap.isReady()) protectedNow = true;
+      } catch {
+        protectedNow = true;
+      }
+      if (protectedNow) {
+        protectedPixels += pixels;
+        continue;
+      }
+      candidates.push({
+        url,
+        bitmap,
+        pixels,
+        touch: Number(bitmap.__mvmzLastTouch || 0)
+      });
+    }
+
+    const targetMP = usedBefore >= CRITICAL_WATER ? 8 : usedBefore >= STRONG_WATER ? 14 : 24;
+    let optionalPixels = candidates.reduce((sum, item) => sum + item.pixels, 0);
+    const targetPixels = targetMP * 1e6;
+    candidates.sort((a, b) => a.touch - b.touch || b.pixels - a.pixels);
+    let evicted = 0;
+    let evictedPixels = 0;
+    for (const item of candidates) {
+      if (optionalPixels <= targetPixels) break;
+      if (cache[item.url] !== item.bitmap) continue;
+      delete cache[item.url];
+      optionalPixels -= item.pixels;
+      evictedPixels += item.pixels;
+      evicted++;
+      try { item.bitmap.destroy?.(); } catch (error) {
+        ctx.log(`[mz-mem] cache bitmap destroy FAILED | ${item.url} | ${String((error as any)?.stack ?? error)}`);
+      }
+    }
+    return {
+      beforeCount: Object.keys(cache).length + evicted,
+      afterCount: Object.keys(cache).length,
+      totalPixels,
+      protectedPixels,
+      evicted,
+      evictedPixels,
+      targetMP
+    };
+  };
+
+  const heavyTransition = (oldName: string, nextName: string) => {
+    return nextName === 'Scene_Map' || nextName === 'Scene_Battle' || oldName === 'Scene_Battle';
+  };
+  const transitionKey = (oldName: string, nextName: string) => `${oldName}->${nextName}`;
+  const lightTransition = (oldName: string, nextName: string, used: number) => {
+    return used >= PREEMPTIVE_WATER && preemptiveTransitions.has(transitionKey(oldName, nextName));
+  };
+
+  if (mapProto && typeof mapProto.terminate === 'function' && !mapProto.terminate.__mvmzHighWaterWrapped) {
+    const originalMapTerminate = mapProto.terminate;
+    const wrappedMapTerminate = function(this: any, ...args: any[]) {
+      const mem = memory();
+      const isMapTransfer = !!g.Scene_Map && manager.isNextScene?.(g.Scene_Map);
+      const preemptive = isMapTransfer && lightTransition('Scene_Map', 'Scene_Map', mem.used);
+      if (!isMapTransfer || (mem.used < HIGH_WATER && !preemptive) || typeof manager.snapForBackground !== 'function') {
+        return originalMapTerminate.apply(this, args);
+      }
+      const originalSnapForBackground = manager.snapForBackground;
+      let skipped = false;
+      manager.snapForBackground = function() {
+        skipped = true;
+      };
+      try {
+        return originalMapTerminate.apply(this, args);
+      } finally {
+        manager.snapForBackground = originalSnapForBackground;
+        if (skipped) {
+          const mode = mem.used >= HIGH_WATER ? 'full' : 'light';
+          ctx.log(`[mz-mem] ${mode} Map->Map snapshot skipped | nativeMiB=${mib(mem.used)} fullThresholdMiB=${mib(HIGH_WATER)} preemptiveThresholdMiB=${Number.isFinite(PREEMPTIVE_WATER) ? mib(PREEMPTIVE_WATER) : 'off'}`);
+        }
+      }
+    };
+    wrappedMapTerminate.__mvmzHighWaterWrapped = true;
+    mapProto.terminate = wrappedMapTerminate;
+  }
+
+  if (typeof manager.onSceneTerminate === 'function' && !manager.onSceneTerminate.__mvmzHighWaterWrapped) {
+    const originalOnSceneTerminate = manager.onSceneTerminate;
+    const wrappedOnSceneTerminate = function(this: any, ...args: any[]) {
+      const oldScene = this._scene;
+      const nextScene = this._nextScene;
+      const oldName = String(oldScene?.constructor?.name || 'none');
+      const nextName = String(nextScene?.constructor?.name || 'none');
+      const before = memory();
+      const result = originalOnSceneTerminate.apply(this, args);
+      const fullReclaim = before.used >= HIGH_WATER && heavyTransition(oldName, nextName);
+      const lightReclaim = lightTransition(oldName, nextName, before.used);
+      if (!fullReclaim && !lightReclaim) return result;
+
+      let earlyDestroyed = false;
+      const previous = this._previousScene;
+      if (previous) {
+        try {
+          previous.destroy?.();
+          this._previousScene = null;
+          earlyDestroyed = true;
+        } catch (error) {
+          ctx.log(`[mz-mem] early previous-scene destroy FAILED | ${oldName}->${nextName} | ${String((error as any)?.stack ?? error)}`);
+        }
+      }
+
+      const cache = fullReclaim
+        ? trimUnusedImageCache(before.used, previous)
+        : {
+            beforeCount: Object.keys(imageManager._cache || {}).length,
+            afterCount: Object.keys(imageManager._cache || {}).length,
+            totalPixels: 0,
+            protectedPixels: 0,
+            evicted: 0,
+            evictedPixels: 0,
+            targetMP: -1
+          };
+      try { g.Graphics?.effekseer?.stopAll?.(); } catch {}
+      try { g.Graphics?.app?.renderer?.textureGC?.run?.(); } catch {}
+      try { if (typeof g.gc === 'function') g.gc(); } catch {}
+      const immediate = memory();
+      const mode = fullReclaim ? 'full' : 'light';
+      ctx.log(`[mz-mem] transition reclaim | mode=${mode} ${oldName}->${nextName} nativeMiB=${mib(before.used)}=>${mib(immediate.used)} nativeArenaMiB=${mib(before.arena)} nativeFreeMiB=${mib(before.free)} capacityFreeMiB=${mib(Math.max(0, before.total - before.used))} externalMiB=${mib(before.external)} mallocMiB=${mib(before.malloced)} earlyDestroy=${earlyDestroyed} cache=${cache.beforeCount}->${cache.afterCount} cacheMP=${(cache.totalPixels / 1e6).toFixed(1)} protectedMP=${(cache.protectedPixels / 1e6).toFixed(1)} evicted=${cache.evicted} evictedMP=${(cache.evictedPixels / 1e6).toFixed(1)} targetOptionalMP=${cache.targetMP}`);
+      try {
+        setTimeout(() => {
+          const after = memory();
+          ctx.log(`[mz-mem] transition reclaim settled | ${oldName}->${nextName} nativeMiB=${mib(after.used)} externalMiB=${mib(after.external)} heapMiB=${mib(after.heap)}`);
+        }, 0);
+      } catch {}
+      return result;
+    };
+    wrappedOnSceneTerminate.__mvmzHighWaterWrapped = true;
+    manager.onSceneTerminate = wrappedOnSceneTerminate;
+  }
+
+  ctx.log(`[mz-mem] transition reclaim installed | fullThreshold=${fullWaterMiB}MiB preemptiveThreshold=${Number.isFinite(preemptiveWaterMiB) ? `${preemptiveWaterMiB}MiB` : 'off'} preemptiveTransitions=${Array.from(preemptiveTransitions).join(',') || 'none'} | light=early destroy/snapshot skip/textureGC/V8GC full=+scene-safe ImageManager LRU trim`);
+}
+
+function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
+  scripts.onAfterScript(relative => {
+    const lower = relative.toLowerCase();
+    const g: any = globalThis as any;
+    if (lower.endsWith('/pixi.js') || lower === 'js/libs/pixi.js') {
+      const pixi = g.PIXI;
+      const webgl1 = pixi?.ENV?.WEBGL;
+      if (pixi?.settings && webgl1 !== undefined) {
+        const before = pixi.settings.PREFER_ENV;
+        // The host is still a real WebGL2 context, but MZ's Tilemap and many
+        // plugins are authored for Pixi's WebGL1 systems/GLSL100 path. Earlier
+        // WebGL1 attempts recursed through the OES VAO shim; that root cause
+        // was fixed in V007 by freezing the native WebGL2 VAO entrypoints.
+        // Running Pixi as WebGL1 over the WebGL2 compatibility proxy avoids
+        // the WebGL2 renderer path that leaves MZ Tilemap scenes black on HOS.
+        pixi.settings.PREFER_ENV = webgl1;
+        ctx.log(`[mz-gfx] PIXI compatibility env | before=${String(before)} after=${String(pixi.settings.PREFER_ENV)} webgl1=${String(webgl1)} host=WebGL2`);
+      } else {
+        ctx.log('[mz-gfx] PIXI WebGL1 compatibility hook unavailable');
+      }
+    }
+    if (lower.endsWith('/rmmz_core.js') || lower === 'js/rmmz_core.js') {
+      if (g.Utils?.RPGMAKER_NAME) {
+        ctx.log(`[mz] core loaded | maker=${g.Utils.RPGMAKER_NAME} version=${g.Utils.RPGMAKER_VERSION}`);
+      }
+      if (g.Utils) {
+        g.Utils.canUseIndexedDB = () => true;
+        ctx.log('[mz-host] Utils.canUseIndexedDB -> true via SD StorageManager backend');
+        g.Utils.isLocal = () => true;
+        ctx.log('[mz-host] Utils.isLocal -> true via ResourceFS/XHR local runtime');
+      }
+      installMZFontBridge(ctx);
+      installMZBitmapCanvasBridge(ctx);
+      installMZGraphicsCompat(ctx);
+      installMZPixiCreateDiagnostics(ctx);
+      installMZAudioCompat(ctx);
+    }
+    if (lower.endsWith('/rmmz_managers.js') || lower === 'js/rmmz_managers.js') {
+      installMZSceneDiagnostics(ctx);
+      installMZEffectDiagnostics(ctx);
+    }
+    if (lower.endsWith('/rmmz_scenes.js') || lower === 'js/rmmz_scenes.js') {
+      installMZBattleLifecycleDiagnostics(ctx);
+    }
+  });
+  installMZStorageHook(ctx, scripts);
+}
+
+export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
+  const { fs, log } = ctx;
+  const document: any = (globalThis as any).document;
+  log('[mvmz-opt] V052 raw RGBA optimizer cache remains disabled after device regression; .mvmz_opt ignored');
+  scripts.installDynamicScriptBridge(document);
+  installMZBootCompat(ctx);
+  installMZCoreHooks(ctx, scripts);
+
+  const indexHtml = fs.readText('index.html');
+  const sources = extractScriptSources(indexHtml);
+  if (!sources.length) throw new Error('MZ index.html has no external scripts');
+  log(`[mz] index scripts=${sources.length} | ${sources.join(', ')}`);
+
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+    const source = sources[sourceIndex];
+    if (!fs.exists(source)) throw new Error(`MZ script missing: ${source}`);
+    await scripts.loadNowWithHooks(source, false, undefined, document);
+  }
+
+  await scripts.drain();
+  const g: any = globalThis as any;
+  if (g.Utils && g.Utils.RPGMAKER_NAME && g.Utils.RPGMAKER_NAME !== 'MZ') {
+    throw new Error(`MZ engine identity mismatch: ${g.Utils.RPGMAKER_NAME}`);
+  }
+  log(`[mz] scripts/plugins drained | version=${g.Utils?.RPGMAKER_VERSION ?? 'pending-main'}`);
+  ctx.compat?.runPhase('post_plugins');
+  installMZFontBridge(ctx);
+  installMZSceneDiagnostics(ctx);
+  installMZEffectDiagnostics(ctx);
+  installMZHighWaterTransitionReclaim(ctx);
+  installMZDamageBitmapCache(ctx);
+  log('[mz-warm] V052 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
+  if (!ctx.standaloneEngine) installMZHostPump(ctx);
+  else installMZStandaloneHostPump(ctx);
+  ctx.compat?.runPhase('pre_boot');
+  dispatchWindowLoad(log);
+  ctx.compat?.runPhase('post_boot');
+}
