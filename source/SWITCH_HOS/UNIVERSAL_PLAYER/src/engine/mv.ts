@@ -698,17 +698,20 @@ async function decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState) {
     }
     if (!canvas || !context) {
       const decoded = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-      try {
-        if (bitmap._loadingState !== expectedState) return;
-        canvas = g.document.createElement("canvas");
-        canvas.width = Math.max(1, decoded.width);
-        canvas.height = Math.max(1, decoded.height);
-        context = canvas.getContext("2d");
-        if (!context) throw new Error("2D canvas context unavailable for decoded bitmap");
-        context.drawImage(decoded, 0, 0);
-      } finally {
-        try { decoded.close(); } catch {}
+      if (bitmap._loadingState !== expectedState) {
+        decoded.close();
+        return;
       }
+      canvas = g.document.createElement("canvas");
+      canvas.width = Math.max(1, decoded.width);
+      canvas.height = Math.max(1, decoded.height);
+      context = canvas.getContext("2d");
+      if (!context) {
+        decoded.close();
+        throw new Error("2D canvas context unavailable for decoded bitmap");
+      }
+      context.drawImage(decoded, 0, 0);
+      decoded.close();
     }
     bitmap.__canvas = canvas;
     bitmap.__context = context;
@@ -742,7 +745,7 @@ function scheduleMvBitmapDecode(ctx, bitmap, url, expectedState, loadBytes) {
     if (bitmap._loadingState !== expectedState) return;
     try {
       if (tryLoadMvRawCache(ctx, bitmap, url, expectedState)) return;
-      const bytes = await loadBytes();
+      const bytes = loadBytes();
       await decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState);
     } catch (error) {
       bitmap._loadingState = "error";
@@ -757,8 +760,8 @@ function installMvEncryptedImageBridge(ctx) {
   g.Decrypter.decryptImg = function(url, bitmap) {
     const encryptedUrl = g.Decrypter.extToEncryptExt(url);
     ctx.log(`[mv-img] decrypt request | ${url} -> ${encryptedUrl}`);
-    scheduleMvBitmapDecode(ctx, bitmap, url, "decrypting", async () => {
-      const encryptedBytes = await ctx.fs.readBufferAsync(encryptedUrl);
+    scheduleMvBitmapDecode(ctx, bitmap, url, "decrypting", () => {
+      const encryptedBytes = ctx.fs.readBuffer(encryptedUrl);
       return g.Decrypter.decryptArrayBuffer(encryptedBytes);
     });
   };
@@ -794,7 +797,7 @@ function installMvRegularImageBridge(ctx) {
       g.Decrypter.decryptImg(url, this);
       return;
     }
-    scheduleMvBitmapDecode(ctx, this, url, "requesting", () => ctx.fs.readBufferAsync(url));
+    scheduleMvBitmapDecode(ctx, this, url, "requesting", () => ctx.fs.readBuffer(url));
   };
   ctx.log("[mv-img] direct createImageBitmap compatibility installed");
 }

@@ -4,6 +4,9 @@
 
 ### English
 
+- V054 rollback recovery: V053 was rejected by device testing because MZ no longer booted and MV crashed near startup. All V053 runtime changes were reverted byte-for-byte to the V052 source baseline; only the MV/MZ version identifiers were advanced to 0.54.0 for log/build identification.
+- The reverted V053 experiment included the combined async local file/fetch/Image path work and MZ texture-lifetime/diagnostic changes. Future optimization work will be reintroduced one isolated change per build instead of as a combined set.
+
 - V053 Switch optimization pass: local game assets now use bounded asynchronous SD reads instead of microtask-wrapped synchronous reads. ResourceFS caches resolved paths, Image.src resolves directly to local sdmc paths, and MV regular/encrypted image reads use the async path under the existing decode gate.
 - MZ 0.53.0 restores lazy Image/Canvas behavior while preserving BaseTexture identity when Canvas is materialized, restores Pixi texture-GC aging under the logical RenderTexture presenter, and changes high-water optional-cache eviction from destructive Bitmap destroy to GPU dispose + reload-safe cache removal.
 - Runtime overhead and safety: GL trace now has a real call budget, periodic framebuffer readPixels diagnostics are opt-in, pointer overlays recreate after scene destruction, live damage-number bitmaps are protected from LRU destruction, MV temporary ImageBitmap cleanup is finally-safe, and logger SD metadata/backpressure is bounded.
@@ -41,6 +44,9 @@
 - Launcher game-name mapping, thumbnail view, 5x2 grid and Start+Select Yes/No UI from 0.5.0 are retained.
 
 ### 한국어
+
+- V054 롤백 복구: V053은 실기에서 MZ가 실행되지 않고 MV가 시작 직후 튕겨 폐기했습니다. V053에서 변경한 runtime 파일을 V052 소스 기준으로 바이트 단위 복구했고, 로그/빌드 식별을 위해 MV/MZ 버전만 0.54.0으로 올렸습니다.
+- V053에서 함께 넣었던 async local file/fetch/Image 경로와 MZ texture lifetime/진단 변경은 모두 되돌렸습니다. 이후 최적화는 여러 기능을 한 번에 넣지 않고 빌드별로 한 가지씩만 분리 적용합니다.
 
 - V053 Switch 최적화: 로컬 게임 자산을 microtask 안의 동기 read가 아니라 제한된 비동기 SD read로 읽습니다. ResourceFS 경로 캐시, Image.src의 direct sdmc 경로, MV 일반/암호화 이미지 async read를 적용했습니다.
 - MZ 0.53.0은 Image/Canvas lazy 동작을 복구하면서 Canvas가 실제 필요해질 때 기존 BaseTexture 정체성을 유지합니다. logical RenderTexture presenter 때문에 멈춰 있던 Pixi texture-GC aging도 외부 프레임 기준으로 복구하고, high-water optional cache 정리는 Bitmap 파괴 대신 GPU dispose + reload-safe cache 제거 방식으로 바꿨습니다.

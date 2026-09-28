@@ -201,10 +201,6 @@ export function installPointerBridge(log: LogFn) {
     const pixi = g.PIXI;
     const scene = g.SceneManager?._scene;
     if (!pixi?.Graphics || !scene?.addChild) return;
-    if (cursor && (cursor._destroyed || cursor.destroyed)) {
-      cursor = null;
-      log('[pointer] destroyed cursor overlay released; recreating for active scene');
-    }
     if (!cursor) {
       try {
         cursor = new pixi.Graphics();

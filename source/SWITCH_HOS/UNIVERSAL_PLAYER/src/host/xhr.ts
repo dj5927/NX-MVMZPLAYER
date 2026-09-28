@@ -67,19 +67,15 @@ export function makeFileXMLHttpRequest(fs: ResourceFS, log: LogFn, NativeXHR?: a
         native.send(_body);
         return;
       }
-      const resolveLocal = () => {
-        if (this.method !== 'GET') throw new Error(`unsupported local method ${this.method}`);
-        const relative = normalizeRelativePath(this.url);
-        const path = (isAbsoluteResource(this.url) && (this.url.startsWith('sdmc:') || this.url.startsWith('romfs:')))
-          ? this.url
-          : fs.resolve(relative);
-        return { relative, path };
-      };
-      const runSync = () => {
+      const run = () => {
         if (this.aborted) return;
         let ok = false;
         try {
-          const { relative, path } = resolveLocal();
+          if (this.method !== 'GET') throw new Error(`unsupported local method ${this.method}`);
+          const relative = normalizeRelativePath(this.url);
+          const path = (isAbsoluteResource(this.url) && (this.url.startsWith('sdmc:') || this.url.startsWith('romfs:')))
+            ? this.url
+            : fs.resolve(relative);
           const buffer = fs.readBuffer(path);
           this.status = 200;
           this.statusText = 'OK';
@@ -112,51 +108,7 @@ export function makeFileXMLHttpRequest(fs: ResourceFS, log: LogFn, NativeXHR?: a
           // terminating the HOS process.
         }
       };
-      const runAsync = async () => {
-        if (this.aborted) return;
-        let relative = normalizeRelativePath(this.url);
-        let path = this.url;
-        try {
-          ({ relative, path } = resolveLocal());
-          const buffer = await fs.readBufferAsync(path);
-          if (this.aborted) return;
-          this.status = 200;
-          this.statusText = 'OK';
-          this.responseURL = path;
-          if (this.responseType === 'arraybuffer') {
-            this.response = buffer;
-            this.responseText = '';
-          } else if (this.responseType === 'blob') {
-            this.response = new Blob([buffer]);
-            this.responseText = '';
-          } else {
-            const text = new TextDecoder().decode(buffer);
-            this.responseText = text;
-            this.response = this.responseType === 'json' ? JSON.parse(text) : text;
-          }
-          if (this.aborted) return;
-          this.readyState = 4;
-          log(`[fs-xhr] 200 async ${relative} bytes=${buffer.byteLength}`);
-          try {
-            this.finish(true);
-          } catch (callbackError) {
-            log(`[fs-xhr] callback FAILED ${relative} | ${String(callbackError)}`);
-          }
-        } catch (error) {
-          if (this.aborted) return;
-          this.status = 404;
-          this.statusText = 'Not Found';
-          this.readyState = 4;
-          log(`[fs-xhr] 404 async ${relative} error=${String(error)}`);
-          try {
-            this.finish(false);
-          } catch (callbackError) {
-            log(`[fs-xhr] callback FAILED ${relative} | ${String(callbackError)}`);
-          }
-        }
-      };
-      if (this.async) queueMicrotask(() => { void runAsync(); });
-      else runSync();
+      if (this.async) queueMicrotask(run); else run();
     }
 
     private fireReadyState() {
