@@ -2350,7 +2350,9 @@ export async function bootMv(ctx, scripts) {
   const sources = extractScriptSources(indexHtml);
   if (!sources.length) throw new Error("MV index.html has no external scripts");
   log(`[mv] index scripts=${sources.length} | ${sources.join(", ")}`);
-  for (const source of sources) {
+  ctx.reportProgress?.('MV 스크립트 로딩 중', 34, `0/${sources.length}`);
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+    const source = sources[sourceIndex];
     if (!fs.exists(source)) {
       if (isOptionalMvLibrary(source)) {
         log(`[mv] optional script missing, fallback used | ${source}`);
@@ -2369,8 +2371,17 @@ export async function bootMv(ctx, scripts) {
     }
     scripts.loadNow(source, isBrowserLibrary(source), void 0, document);
     afterCoreScript(source, ctx);
+    const progress = 34 + Math.round(((sourceIndex + 1) / sources.length) * 40);
+    ctx.reportProgress?.('MV 스크립트 로딩 중', progress, `${sourceIndex + 1}/${sources.length}  ${source}`);
+    if ((sourceIndex + 1) % 4 === 0 || sourceIndex + 1 === sources.length) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }
   }
+  ctx.reportProgress?.('MV 플러그인 초기화 중', 78, '동적 플러그인 처리');
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   await scripts.drain();
+  ctx.reportProgress?.('MV 호환 기능 적용 중', 84, '오디오 / 이미지 / 폰트 / 그래픽');
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   installMvPostPluginSaveCompat(ctx);
   restoreMvCoreAudioForStreamingPlugin(ctx);
   installMvAudioDiagnostics(ctx);
@@ -2382,14 +2393,15 @@ export async function bootMv(ctx, scripts) {
   installMvGraphicsPerformanceBridge(ctx);
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
-  log('[mv-warm] V046 auto compiler/self-learning disabled; V043 manual/runtime warm path restored');
-  installMvAssetPrewarmBridge(ctx);
+  log('[mv-warm] V047 all manifest/map warm gates disabled; natural on-demand MV loading restored');
+  ctx.reportProgress?.('MV 엔진 마무리 중', 94, '선로딩 gate 없이 자연 로딩 사용');
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
   if (!g.Utils || g.Utils.RPGMAKER_NAME !== "MV") {
     throw new Error(`MV engine identity mismatch: ${g.Utils?.RPGMAKER_NAME ?? "missing"}`);
   }
   log(`[mv] core/plugins ready | version=${g.Utils.RPGMAKER_VERSION}`);
+  ctx.reportProgress?.('게임 시작 중', 98, `RPG Maker MV ${g.Utils.RPGMAKER_VERSION}`);
   dispatchWindowLoad(log);
 }
 
