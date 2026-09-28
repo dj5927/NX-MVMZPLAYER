@@ -6,6 +6,7 @@ import { installImagePathBridge } from '../../UNIVERSAL_PLAYER/src/host/images';
 import { installPointerBridge } from '../../UNIVERSAL_PLAYER/src/host/pointer';
 import { ScriptLoader } from '../../UNIVERSAL_PLAYER/src/host/scripts';
 import { installGameExitConfirmation } from '../../UNIVERSAL_PLAYER/src/host/exit_confirm';
+import { installNxPlusExitGuard } from '../../UNIVERSAL_PLAYER/src/host/plus_exit_guard';
 import { bootMv } from '../../UNIVERSAL_PLAYER/src/engine/mv';
 import { bootMz } from '../../UNIVERSAL_PLAYER/src/engine/mz';
 import type { EngineKind, GameInfo, RuntimeContext } from '../../UNIVERSAL_PLAYER/src/types';
@@ -62,6 +63,8 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   const logger = new RuntimeLogger(logPath);
   const log = logger.log;
 
+  installNxPlusExitGuard(log);
+
   log(`MVMZ Split ${expectedEngine} Player v${playerVersion} starting`);
   log(`argv=${JSON.stringify(Switch.argv)}`);
   log(`HANDOFF | ${JSON.stringify(handoff)}`);
@@ -95,10 +98,16 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   const NativeXHR = g.XMLHttpRequest;
   g.XMLHttpRequest = makeFileXMLHttpRequest(fs, log, NativeXHR);
   installImagePathBridge(fs, log);
+  log('[split-init] image path bridge ready');
+  logger.flush();
   g.location.href = dataRoot + '/index.html';
   g.location.pathname = dataRoot + '/index.html';
+  log(`[split-init] location ready | href=${g.location.href}`);
+  logger.flush();
 
   const scripts = new ScriptLoader(fs, log, expectedEngine === 'MV' ? 'mv-batch' : 'legacy');
+  log(`[split-init] script loader ready | mode=${expectedEngine === 'MV' ? 'mv-batch' : 'legacy'}`);
+  logger.flush();
   const ctx: RuntimeContext = {
     game,
     log,
@@ -113,8 +122,16 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   };
   logger.flush();
 
+  try {
+    const mem = Switch.memoryUsage();
+    log(`[split-init] pre-boot memory | heapMiB=${(Number(mem.usedHeapSize || 0) / 1048576).toFixed(1)} nativeMiB=${(Number(mem.nativeHeapUsed || 0) / 1048576).toFixed(1)}/${(Number(mem.nativeHeapTotal || 0) / 1048576).toFixed(1)}`);
+  } catch {}
+  log(`[split-init] boot ${expectedEngine} enter`);
+  logger.flush();
   if (expectedEngine === 'MV') await bootMv(ctx, scripts);
   else await bootMz(ctx, scripts);
+  log(`[split-init] boot ${expectedEngine} returned`);
+  logger.flush();
 
   log('CONTROLS | B=OK A=Cancel X=Menu L=PageUp R=PageDown RightStick=Mouse ZL=LeftClick ZR=RightClick Touch=Mouse Start+Select=ExitConfirm');
   logger.flush();
