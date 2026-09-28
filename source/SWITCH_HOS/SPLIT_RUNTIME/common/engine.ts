@@ -5,6 +5,7 @@ import { makeFileXMLHttpRequest } from '../../UNIVERSAL_PLAYER/src/host/xhr';
 import { installImagePathBridge } from '../../UNIVERSAL_PLAYER/src/host/images';
 import { installPointerBridge } from '../../UNIVERSAL_PLAYER/src/host/pointer';
 import { ScriptLoader } from '../../UNIVERSAL_PLAYER/src/host/scripts';
+import { installGameExitConfirmation } from '../../UNIVERSAL_PLAYER/src/host/exit_confirm';
 import { bootMv } from '../../UNIVERSAL_PLAYER/src/engine/mv';
 import { bootMz } from '../../UNIVERSAL_PLAYER/src/engine/mz';
 import type { EngineKind, GameInfo, RuntimeContext } from '../../UNIVERSAL_PLAYER/src/types';
@@ -24,11 +25,6 @@ function safeName(name: string) {
 
 function gameId(text: string) {
   return encodeURIComponent(String(text).normalize('NFKC')).slice(0, 180) || 'game';
-}
-
-function buttonDown(index: number) {
-  const pad = navigator.getGamepads()[0];
-  return !!pad?.buttons[index]?.pressed;
 }
 
 function readHandoff() {
@@ -120,20 +116,18 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   if (expectedEngine === 'MV') await bootMv(ctx, scripts);
   else await bootMz(ctx, scripts);
 
-  log('CONTROLS | B=OK A=Cancel X=Menu L=PageUp R=PageDown RightStick=Mouse ZL=LeftClick ZR=RightClick Touch=Mouse Plus+Minus=Launcher');
+  log('CONTROLS | B=OK A=Cancel X=Menu L=PageUp R=PageDown RightStick=Mouse ZL=LeftClick ZR=RightClick Touch=Mouse Start+Select=ExitConfirm');
   logger.flush();
 
+  installGameExitConfirmation(log, () => launchMainLauncher(log, logger));
+
   let lastScene = '';
-  let lastExitCombo = false;
   setInterval(() => {
     const scene = g.SceneManager?._scene?.constructor?.name ?? 'none';
     if (scene !== lastScene) {
       lastScene = scene;
       log('SCENE | ' + scene);
     }
-    const exitCombo = buttonDown(8) && buttonDown(9);
-    if (exitCombo && !lastExitCombo) launchMainLauncher(log, logger);
-    lastExitCombo = exitCombo;
   }, 100);
 
   let lastFrameCount = Number(g.Graphics?.frameCount ?? 0);
