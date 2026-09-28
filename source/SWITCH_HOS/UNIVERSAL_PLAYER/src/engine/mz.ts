@@ -1,5 +1,6 @@
 import type { RuntimeContext } from '../types';
 import { extractScriptSources, ScriptLoader } from '../host/scripts';
+import { MvmzOptCache } from '../host/opt_cache';
 import { installMZStandaloneHostPump } from './mz_standalone';
 import { installMZAudioCompat } from './mz_audio';
 import { isWoff1, woff1ToSfnt } from '../compat/woff_sfnt';
@@ -288,8 +289,40 @@ function installMZBitmapCanvasBridge(ctx: RuntimeContext) {
   const proto = g.Bitmap?.prototype;
   if (!proto || proto.__mvmzCanvasUploadBridge) return;
   proto.__mvmzCanvasUploadBridge = true;
+  const originalStartLoading = proto._startLoading;
   const originalOnLoad = proto._onLoad;
+  const optCache = new MvmzOptCache(ctx, 'MZ');
+  let optLogged = 0;
   let logged = 0;
+
+  if (typeof originalStartLoading === 'function') {
+    proto._startLoading = function() {
+      const url = String(this._url || '');
+      if (url && optCache.isEnabled() && optCache.has(url)) {
+        const loaded = optCache.loadCanvas(url);
+        if (loaded) {
+          try {
+            this._destroyCanvas?.();
+            this._canvas = loaded.canvas;
+            this._context = loaded.context;
+            this._image = loaded.canvas;
+            this._loadingState = 'loaded';
+            this._createBaseTexture(loaded.canvas);
+            this._callLoadListeners();
+            if (optLogged < 32) {
+              optLogged++;
+              ctx.log(`[mz-opt] cache ready | ${url} ${loaded.width}x${loaded.height}`);
+              if (optLogged === 32) ctx.log('[mz-opt] further cache-ready logs suppressed');
+            }
+            return;
+          } catch (error) {
+            ctx.log(`[mz-opt] apply FAILED -> native fallback | ${url} | ${String((error as any)?.stack ?? error)}`);
+          }
+        }
+      }
+      return originalStartLoading.call(this);
+    };
+  }
 
   proto._onLoad = function() {
     const image = this._image;

@@ -4,6 +4,7 @@ import { normalizeRelativePath } from '../host/fs';
 import { installMvNativeVideoBridge } from './mv_video';
 import { installMvNativeAudioStream } from './mv_audio_stream';
 import { installMvNodeRequireCompat } from './mv_node_compat';
+import { MvmzOptCache } from '../host/opt_cache';
 import { decodePngExact } from '../compat/png_exact';
 
 var FPSMeterStub = class {
@@ -528,6 +529,40 @@ function mvRawCachePath(url) {
   if (!/\.(?:png|jpg|jpeg)$/i.test(rel)) return null;
   return `.mvmz_cache/rgba/${rel.replace(/\.[^.\/]+$/, "")}.mrgba`;
 }
+var mvOptCacheReader;
+function getMvOptCache(ctx) {
+  if (mvOptCacheReader === void 0) {
+    mvOptCacheReader = new MvmzOptCache(ctx, "MV");
+  }
+  return mvOptCacheReader;
+}
+function tryLoadMvOptCache(ctx, bitmap, url, expectedState) {
+  const opt = getMvOptCache(ctx);
+  if (!opt?.isEnabled?.() || !opt.has(url)) return false;
+  const loaded = opt.loadCanvas(url);
+  if (!loaded) return false;
+  if (bitmap._loadingState !== expectedState) return true;
+  const g = globalThis;
+  try {
+    bitmap.__canvas = loaded.canvas;
+    bitmap.__context = loaded.context;
+    bitmap._image = loaded.canvas;
+    syncMvBitmapBaseTexture(ctx, bitmap, loaded.canvas, url);
+    bitmap._loadingState = "loaded";
+    bitmap._setDirty();
+    queueMvGpuPrepare(ctx, bitmap, url);
+    bitmap._callLoadListeners();
+    try {
+      g.ImageManager?._imageCache?._truncateCache?.();
+    } catch {
+    }
+    ctx.log(`[mv-opt] cache ready | ${url} ${loaded.width}x${loaded.height}`);
+    return true;
+  } catch (error) {
+    ctx.log(`[mv-opt] apply FAILED -> source fallback | ${url} | ${String(error)}`);
+    return false;
+  }
+}
 var mvRawCacheValidation = "unknown";
 function fnv1a32Hex(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -744,6 +779,7 @@ function scheduleMvBitmapDecode(ctx, bitmap, url, expectedState, loadBytes) {
   void withMvImageDecodeSlot(async () => {
     if (bitmap._loadingState !== expectedState) return;
     try {
+      if (tryLoadMvOptCache(ctx, bitmap, url, expectedState)) return;
       if (tryLoadMvRawCache(ctx, bitmap, url, expectedState)) return;
       const bytes = loadBytes();
       await decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState);

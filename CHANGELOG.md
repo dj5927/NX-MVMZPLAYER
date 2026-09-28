@@ -4,6 +4,11 @@
 
 ### English
 
+- V050 experimental optimizer path: adds PC-side MVMZ Optimizer v0.1 and a new `.mvmz_opt` format, separate from the failed/shelved `.mvmz_warm` and legacy `.mvmz_cache` experiments.
+- The optimizer auto-detects MV/MZ, analyzes event Show Picture / Show Text Face / animation references, plugin-command and plugin literal strings, Skill/Item animation IDs, MZ effect names, SE references and dialogue/database glyphs.
+- The optimizer writes only selected hot `pictures / faces / animations` as validated MVMZRGBA v1 files under a user-selected raw-cache budget (default 512 MiB). Missing cache entries always fall back to the original game asset path.
+- MV/MZ 0.50.0 validate the `.mvmz_opt/manifest.json` engine + System.json fingerprint before using any optimized file. MV checks the new cache before the legacy raw cache/source decoder; MZ hooks Bitmap._startLoading so a cache HIT bypasses native Image/PNG decode entirely.
+- Optimizer GUI is packaged locally as a one-file Windows EXE. The public repository contains reproducible Python/PowerShell source but no binary Release asset yet.
 - V049: adds a fixed MV/MZ boot loading bar that is drawn once before game scripts and presented with only a single initial frame handoff. It does not insert per-script progress yields or fake percentages, so engine initialization order/timing remains unchanged after that one frame.
 - MV 0.49.0: adds pressure-aware picture cache/native-resource reclamation. When native heap exceeds 900 MiB, old `img/pictures` cache entries are trimmed toward a 10 MP picture budget (6 MP above 1050 MiB). A retired bitmap is only destroyed after a grace period and only when it is no longer in ImageCache and no current/next/previous scene graph node references its Bitmap/BaseTexture.
 - MV 0.49.0: retired picture cleanup explicitly destroys BaseTexture and releases Canvas/Image/native references instead of relying on repeated global V8/texture GC. Current on-screen pictures, reservations and in-flight decodes are protected.
@@ -25,6 +30,11 @@
 
 ### 한국어
 
+- V050 실험 Optimizer 경로: 실패/보류한 `.mvmz_warm`, 기존 `.mvmz_cache`와 완전히 분리된 새 `.mvmz_opt` 포맷과 PC용 MVMZ Optimizer v0.1을 추가했습니다.
+- Optimizer는 MV/MZ 자동 판별, 이벤트 Show Picture / Show Text Face / 애니메이션 참조, 플러그인 명령·literal 문자열, Skill/Item animationId, MZ effectName, SE 참조, 대사/DB glyph를 분석합니다.
+- 실제 raw cache는 기본 512MiB 예산 안에서 hot `pictures / faces / animations`만 MVMZRGBA v1로 생성합니다. 캐시에 없는 자산은 항상 게임 원본 로딩으로 fallback합니다.
+- MV/MZ 0.50.0은 `.mvmz_opt/manifest.json`의 엔진과 System.json fingerprint를 먼저 검증합니다. MV는 기존 raw cache/원본 decode보다 새 cache를 우선하고, MZ는 Bitmap._startLoading 앞에서 HIT를 처리해 native Image/PNG decode 자체를 건너뜁니다.
+- Optimizer GUI는 로컬에서 단일 Windows EXE로 패키징했습니다. 공개 저장소에는 재현 가능한 Python/PowerShell 소스만 올리고 Release 바이너리는 아직 배포하지 않습니다.
 - V049: MV/MZ 공통 고정 부팅 로딩바를 추가했습니다. 게임 스크립트 실행 전에 한 번만 그린 뒤 최초 프레임 1회만 표시하고, 스크립트마다 RAF/yield를 끼우거나 가짜 퍼센트를 올리지 않습니다. 이후 엔진 초기화 순서/타이밍에는 개입하지 않습니다.
 - MV 0.49.0: native heap 압박 시 그림 전용 cache/native 자원 회수를 추가했습니다. 900MiB 이상에서 오래된 `img/pictures` 캐시를 10MP 그림 예산으로 줄이고, 1050MiB 이상에서는 6MP까지 줄입니다. 캐시에서 빠진 Bitmap은 grace period 뒤에도 ImageCache에 없고 현재/다음/이전 scene graph에서 Bitmap/BaseTexture 참조가 없을 때만 실제 native 자원을 해제합니다.
 - MV 0.49.0: 오래된 그림은 반복적인 전역 V8/texture GC에 의존하지 않고 BaseTexture destroy와 Canvas/Image/native 참조 해제를 직접 수행합니다. 현재 화면에 보이는 그림, reservation, decode 진행 중 자산은 보호합니다.

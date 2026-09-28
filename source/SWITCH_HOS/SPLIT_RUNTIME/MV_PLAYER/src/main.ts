@@ -1,4 +1,4 @@
 import { reportFatal, runEngine } from '../../common/engine';
 
-runEngine('MV', '0.49.0').catch(reportFatal);
+runEngine('MV', '0.50.0').catch(reportFatal);
 
