@@ -2559,7 +2559,7 @@ function dispatchWindowLoad(log) {
 export async function bootMv(ctx, scripts) {
   const { fs, log } = ctx;
   const document = globalThis.document;
-  log('[mvmz-opt] V051 raw RGBA optimizer cache disabled after device regression; .mvmz_opt ignored');
+  log('[mvmz-opt] V052 raw RGBA optimizer cache remains disabled after device regression; .mvmz_opt ignored');
   installMvNodeRequireCompat(ctx);
   installFpsFallback(log);
   scripts.installDynamicScriptBridge(document);
@@ -2602,7 +2602,7 @@ export async function bootMv(ctx, scripts) {
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
   installMvPictureMemoryReclaimer(ctx);
-  log('[mv-warm] V051 all manifest/map warm gates remain disabled; natural on-demand MV loading retained');
+  log('[mv-warm] V052 all manifest/map warm gates remain disabled; natural on-demand MV loading retained');
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
   if (!g.Utils || g.Utils.RPGMAKER_NAME !== "MV") {

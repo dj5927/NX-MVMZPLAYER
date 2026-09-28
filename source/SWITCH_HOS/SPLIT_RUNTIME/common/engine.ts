@@ -162,11 +162,12 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
     const fps = ((frameCount - lastFrameCount) * 1000 / elapsed).toFixed(1);
     lastFrameCount = frameCount;
     lastFpsTime = now;
-    const items = g.ImageManager?._imageCache?._items || {};
+    const isMZ = expectedEngine === 'MZ';
+    const items = isMZ ? (g.ImageManager?._cache || {}) : (g.ImageManager?._imageCache?._items || {});
     const cacheKeys = Object.keys(items);
     let cachePixels = 0;
     for (const key of cacheKeys) {
-      const bitmap = items[key]?.bitmap;
+      const bitmap = isMZ ? items[key] : items[key]?.bitmap;
       cachePixels += Number(bitmap?.width || 0) * Number(bitmap?.height || 0);
     }
     let memSnapshot: any = null;

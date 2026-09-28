@@ -1,6 +1,6 @@
 {
   "name": "mvmz-mv-player",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "private": true,
   "scripts": {
     "build": "npx --no-install esbuild --bundle --sourcemap --sources-content=false --target=es2022 --format=esm --outfile=romfs/main.js src/main.ts",

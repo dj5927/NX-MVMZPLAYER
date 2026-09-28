@@ -1653,6 +1653,223 @@ function installMZEffectDiagnostics(ctx: RuntimeContext) {
   ctx.log('[mz-effect] first-use load timing diagnostics installed | preload=off');
 }
 
+function installMZHighWaterTransitionReclaim(ctx: RuntimeContext) {
+  const g: any = globalThis as any;
+  const manager = g.SceneManager;
+  const imageManager = g.ImageManager;
+  const mapProto = g.Scene_Map?.prototype;
+  if (!manager || !imageManager || manager.__mvmzHighWaterTransitionReclaim) return;
+  manager.__mvmzHighWaterTransitionReclaim = true;
+
+  const MIB = 1048576;
+  const HIGH_WATER = 1280 * MIB;
+  const STRONG_WATER = 1400 * MIB;
+  const CRITICAL_WATER = 1500 * MIB;
+  const now = () => Number(g.performance?.now?.() ?? Date.now());
+  const memory = () => {
+    try {
+      const mem: any = Switch.memoryUsage();
+      return {
+        used: Number(mem.nativeHeapUsed || 0),
+        total: Number(mem.nativeHeapTotal || 0),
+        heap: Number(mem.usedHeapSize || 0),
+        external: Number(mem.externalMemory || 0)
+      };
+    } catch {
+      return { used: 0, total: 0, heap: 0, external: 0 };
+    }
+  };
+  const mib = (value: number) => (Number(value || 0) / MIB).toFixed(1);
+
+  const originalLoadBitmapFromUrl = imageManager.loadBitmapFromUrl;
+  if (typeof originalLoadBitmapFromUrl === 'function' && !originalLoadBitmapFromUrl.__mvmzTouchTracked) {
+    const wrappedLoadBitmapFromUrl = function(this: any, url: string) {
+      const bitmap = originalLoadBitmapFromUrl.call(this, url);
+      if (bitmap) {
+        try {
+          bitmap.__mvmzLastTouch = now();
+          bitmap.__mvmzCacheUrl = String(url || '');
+        } catch {}
+      }
+      return bitmap;
+    };
+    wrappedLoadBitmapFromUrl.__mvmzTouchTracked = true;
+    imageManager.loadBitmapFromUrl = wrappedLoadBitmapFromUrl;
+  }
+
+  const collectBitmapRefs = (ignoredScene?: any) => {
+    const bitmaps = new Set<any>();
+    const baseTextures = new Set<any>();
+    const visited = new Set<any>();
+    const rememberBitmap = (bitmap: any) => {
+      if (!bitmap || typeof bitmap !== 'object') return;
+      bitmaps.add(bitmap);
+      try {
+        const base = bitmap._baseTexture || bitmap.baseTexture;
+        if (base) baseTextures.add(base);
+      } catch {}
+    };
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object' || visited.has(node)) return;
+      visited.add(node);
+      try { rememberBitmap(node.bitmap); } catch {}
+      try { rememberBitmap(node._bitmap); } catch {}
+      try { rememberBitmap(node.contents); } catch {}
+      try { rememberBitmap(node.contentsBack); } catch {}
+      try { rememberBitmap(node.windowskin); } catch {}
+      try { rememberBitmap(node._windowskin); } catch {}
+      try {
+        const base = node.texture?.baseTexture;
+        if (base) baseTextures.add(base);
+      } catch {}
+      const children = Array.isArray(node.children) ? node.children : [];
+      for (const child of children) walk(child);
+    };
+    if (manager._scene !== ignoredScene) walk(manager._scene);
+    if (manager._nextScene !== ignoredScene) walk(manager._nextScene);
+    if (manager._previousScene !== ignoredScene) walk(manager._previousScene);
+    return { bitmaps, baseTextures };
+  };
+
+  const trimUnusedImageCache = (usedBefore: number, ignoredScene?: any) => {
+    const cache = imageManager._cache || {};
+    const refs = collectBitmapRefs(ignoredScene);
+    const candidates: Array<{ url: string; bitmap: any; pixels: number; touch: number }> = [];
+    let totalPixels = 0;
+    let protectedPixels = 0;
+    for (const url of Object.keys(cache)) {
+      const bitmap = cache[url];
+      if (!bitmap) continue;
+      const width = Math.max(0, Number(bitmap.width || bitmap._canvas?.width || 0));
+      const height = Math.max(0, Number(bitmap.height || bitmap._canvas?.height || 0));
+      const pixels = width * height;
+      totalPixels += pixels;
+      let protectedNow = false;
+      try {
+        const base = bitmap._baseTexture || bitmap.baseTexture;
+        protectedNow = refs.bitmaps.has(bitmap) || (!!base && refs.baseTextures.has(base));
+      } catch {
+        protectedNow = refs.bitmaps.has(bitmap);
+      }
+      try {
+        if (!protectedNow && typeof bitmap.isReady === 'function' && !bitmap.isReady()) protectedNow = true;
+      } catch {
+        protectedNow = true;
+      }
+      if (protectedNow) {
+        protectedPixels += pixels;
+        continue;
+      }
+      candidates.push({
+        url,
+        bitmap,
+        pixels,
+        touch: Number(bitmap.__mvmzLastTouch || 0)
+      });
+    }
+
+    const targetMP = usedBefore >= CRITICAL_WATER ? 8 : usedBefore >= STRONG_WATER ? 14 : 24;
+    let optionalPixels = candidates.reduce((sum, item) => sum + item.pixels, 0);
+    const targetPixels = targetMP * 1e6;
+    candidates.sort((a, b) => a.touch - b.touch || b.pixels - a.pixels);
+    let evicted = 0;
+    let evictedPixels = 0;
+    for (const item of candidates) {
+      if (optionalPixels <= targetPixels) break;
+      if (cache[item.url] !== item.bitmap) continue;
+      delete cache[item.url];
+      optionalPixels -= item.pixels;
+      evictedPixels += item.pixels;
+      evicted++;
+      try { item.bitmap.destroy?.(); } catch (error) {
+        ctx.log(`[mz-mem] cache bitmap destroy FAILED | ${item.url} | ${String((error as any)?.stack ?? error)}`);
+      }
+    }
+    return {
+      beforeCount: Object.keys(cache).length + evicted,
+      afterCount: Object.keys(cache).length,
+      totalPixels,
+      protectedPixels,
+      evicted,
+      evictedPixels,
+      targetMP
+    };
+  };
+
+  const heavyTransition = (oldName: string, nextName: string) => {
+    return nextName === 'Scene_Map' || nextName === 'Scene_Battle' || oldName === 'Scene_Battle';
+  };
+
+  if (mapProto && typeof mapProto.terminate === 'function' && !mapProto.terminate.__mvmzHighWaterWrapped) {
+    const originalMapTerminate = mapProto.terminate;
+    const wrappedMapTerminate = function(this: any, ...args: any[]) {
+      const mem = memory();
+      const isMapTransfer = !!g.Scene_Map && manager.isNextScene?.(g.Scene_Map);
+      if (!isMapTransfer || mem.used < HIGH_WATER || typeof manager.snapForBackground !== 'function') {
+        return originalMapTerminate.apply(this, args);
+      }
+      const originalSnapForBackground = manager.snapForBackground;
+      let skipped = false;
+      manager.snapForBackground = function() {
+        skipped = true;
+      };
+      try {
+        return originalMapTerminate.apply(this, args);
+      } finally {
+        manager.snapForBackground = originalSnapForBackground;
+        if (skipped) {
+          ctx.log(`[mz-mem] high-water Map->Map snapshot skipped | nativeMiB=${mib(mem.used)} thresholdMiB=${mib(HIGH_WATER)}`);
+        }
+      }
+    };
+    wrappedMapTerminate.__mvmzHighWaterWrapped = true;
+    mapProto.terminate = wrappedMapTerminate;
+  }
+
+  if (typeof manager.onSceneTerminate === 'function' && !manager.onSceneTerminate.__mvmzHighWaterWrapped) {
+    const originalOnSceneTerminate = manager.onSceneTerminate;
+    const wrappedOnSceneTerminate = function(this: any, ...args: any[]) {
+      const oldScene = this._scene;
+      const nextScene = this._nextScene;
+      const oldName = String(oldScene?.constructor?.name || 'none');
+      const nextName = String(nextScene?.constructor?.name || 'none');
+      const before = memory();
+      const result = originalOnSceneTerminate.apply(this, args);
+      if (before.used < HIGH_WATER || !heavyTransition(oldName, nextName)) return result;
+
+      let earlyDestroyed = false;
+      const previous = this._previousScene;
+      if (previous) {
+        try {
+          previous.destroy?.();
+          this._previousScene = null;
+          earlyDestroyed = true;
+        } catch (error) {
+          ctx.log(`[mz-mem] early previous-scene destroy FAILED | ${oldName}->${nextName} | ${String((error as any)?.stack ?? error)}`);
+        }
+      }
+
+      const cache = trimUnusedImageCache(before.used, previous);
+      try { g.Graphics?.effekseer?.stopAll?.(); } catch {}
+      try { g.Graphics?.app?.renderer?.textureGC?.run?.(); } catch {}
+      try { if (typeof g.gc === 'function') g.gc(); } catch {}
+      const immediate = memory();
+      ctx.log(`[mz-mem] transition reclaim | ${oldName}->${nextName} nativeMiB=${mib(before.used)}=>${mib(immediate.used)} earlyDestroy=${earlyDestroyed} cache=${cache.beforeCount}->${cache.afterCount} cacheMP=${(cache.totalPixels / 1e6).toFixed(1)} protectedMP=${(cache.protectedPixels / 1e6).toFixed(1)} evicted=${cache.evicted} evictedMP=${(cache.evictedPixels / 1e6).toFixed(1)} targetOptionalMP=${cache.targetMP}`);
+      try {
+        setTimeout(() => {
+          const after = memory();
+          ctx.log(`[mz-mem] transition reclaim settled | ${oldName}->${nextName} nativeMiB=${mib(after.used)} externalMiB=${mib(after.external)} heapMiB=${mib(after.heap)}`);
+        }, 0);
+      } catch {}
+      return result;
+    };
+    wrappedOnSceneTerminate.__mvmzHighWaterWrapped = true;
+    manager.onSceneTerminate = wrappedOnSceneTerminate;
+  }
+
+  ctx.log('[mz-mem] high-water transition reclaim installed | threshold=1280MiB | early previous-scene destroy + Map->Map snapshot skip + scene-reference-safe ImageManager LRU trim');
+}
+
 function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
   scripts.onAfterScript(relative => {
     const lower = relative.toLowerCase();
@@ -1704,7 +1921,7 @@ function installMZCoreHooks(ctx: RuntimeContext, scripts: ScriptLoader) {
 export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   const { fs, log } = ctx;
   const document: any = (globalThis as any).document;
-  log('[mvmz-opt] V051 raw RGBA optimizer cache disabled after device regression; .mvmz_opt ignored');
+  log('[mvmz-opt] V052 raw RGBA optimizer cache remains disabled after device regression; .mvmz_opt ignored');
   scripts.installDynamicScriptBridge(document);
   installMZBootCompat(ctx);
   installMZCoreHooks(ctx, scripts);
@@ -1729,8 +1946,9 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   installMZFontBridge(ctx);
   installMZSceneDiagnostics(ctx);
   installMZEffectDiagnostics(ctx);
+  installMZHighWaterTransitionReclaim(ctx);
   installMZDamageBitmapCache(ctx);
-  log('[mz-warm] V051 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
+  log('[mz-warm] V052 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
   dispatchWindowLoad(log);

@@ -4,6 +4,10 @@
 
 ### English
 
+- V052 transition high-water stabilization: after V051 device testing showed native memory staying around 1.35-1.45 GiB and the process terminating on a later Scene_Map -> Scene_Map transition without a JS fatal, MZ now performs a one-shot reclaim only for heavy Map/Battle scene replacements when native usage is at least 1280 MiB.
+- Under that high-water condition, MZ destroys the finished previous scene before creating the replacement scene, skips the unnecessary stock background snapshot for Map -> Map transfers, and trims only non-system ImageManager cache bitmaps that are not referenced by the current/next scene graph. The cache trim is LRU and keeps 24 MP optional cache normally, 14 MP above 1400 MiB, and 8 MP above 1500 MiB.
+- MZ heartbeat now reports the real MZ ImageManager cache count/pixels instead of the MV-only cache path. Warm/compiler/raw .mvmz_opt remain disabled.
+
 - V051 baseline recovery: disables the V050 raw RGBA `.mvmz_opt` runtime path after device testing showed negligible hitch improvement and substantially higher native-memory pressure. Existing `.mvmz_opt` folders are ignored; normal on-demand game asset loading is restored.
 - MZ 0.51.0 adds non-preloading Effekseer first-use timing diagnostics (`START / READY / CACHE HIT`) with memory snapshots so effect loading can be measured without reintroducing proactive warm gates.
 - The V050 optimizer source/format is retained only for reproducibility and is now marked FAILED / SHELVED; Public Beta Release remains unchanged.
@@ -33,6 +37,10 @@
 - Launcher game-name mapping, thumbnail view, 5x2 grid and Start+Select Yes/No UI from 0.5.0 are retained.
 
 ### 한국어
+
+- V052 전환 high-water 안정화: V051 실기에서 native memory가 약 1.35~1.45GiB에 장시간 머물고 이후 Scene_Map -> Scene_Map 전환 시작 직후 JS FATAL 없이 종료된 것을 확인해, MZ는 native 사용량이 1280MiB 이상일 때 Map/Battle 대형 Scene 교체에 한해 1회 메모리 회수를 수행합니다.
+- high-water 전환에서는 종료된 이전 Scene을 새 Scene 생성 전에 조기 파괴하고, Map -> Map 전환에서 불필요한 stock background snapshot을 생략합니다. 또한 시스템 이미지는 건드리지 않고 현재/다음 Scene graph에서 참조되지 않는 ImageManager cache Bitmap만 LRU로 정리합니다. optional cache 예산은 기본 24MP, 1400MiB 이상 14MP, 1500MiB 이상 8MP입니다.
+- MZ heartbeat가 이제 MV 전용 cache=0 대신 실제 MZ ImageManager cache 개수/픽셀을 표시합니다. warm/compiler/raw .mvmz_opt는 계속 비활성입니다.
 
 - V051 기준선 복구: V050 raw RGBA `.mvmz_opt`가 실기에서 체감 개선이 거의 없고 native memory 압박을 크게 높인 것이 확인되어 runtime 사용을 비활성화했습니다. SD에 기존 `.mvmz_opt`가 남아 있어도 무시하고 원래의 on-demand 자산 로딩으로 복귀합니다.
 - MZ 0.51.0은 preload 없이 Effekseer 첫 사용 시간을 `START / READY / CACHE HIT`와 메모리 snapshot으로 기록해 proactive warm을 다시 켜지 않고 실제 effect 병목을 측정합니다.
