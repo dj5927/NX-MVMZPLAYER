@@ -5,6 +5,7 @@
 - V057 starts the external compatibility-pack architecture. The common runtime now scans the selected game, matches external `_compat` rules, supports phased compatibility scripts, and logs richer native allocator/V8 memory telemetry.
 - The first game-specific rule targets garun_windows only (MZ + expected plugin set): light transition reclaim begins at 1024 MiB for Battle->Map and Map->Map without ImageManager eviction; the existing 1280 MiB full scene-safe LRU reclaim remains intact.
 - Unmatched games keep the V052 memory policy. Battle-BGM lifecycle work remains separate.
+- V057 distribution layout now requires the external `_compat` directory beside the launcher/runtime tree; copying only the NRO files will intentionally leave game-specific rules inactive.
 
 - V056 isolated candidate: V055 ResourceFS resolved-path caching is rejected after garun_windows booted but terminated without JS FATAL on a dungeon Scene_Map -> Scene_Map transfer. V056 restores ResourceFS exactly to V052 and changes only GL diagnostic trace budgeting.
 - V056 GL tracing now consumes its budget on every traced GL call, not only calls that report an error, so error-free traces stop after the configured call budget instead of paying indefinite gl.getError() overhead.
