@@ -118,6 +118,7 @@ jobs:
           cp source/SWITCH_HOS/SPLIT_RUNTIME/LAUNCHER/mvmz-split-launcher.nro package/switch/mvmzplayer/MVMZ_Launcher.nro
           cp source/SWITCH_HOS/SPLIT_RUNTIME/MV_PLAYER/mvmz-mv-player.nro package/switch/mvmzplayer/runtime/MVMZ_MV_Player.nro
           cp source/SWITCH_HOS/SPLIT_RUNTIME/MZ_PLAYER/mvmz-mz-player.nro package/switch/mvmzplayer/runtime/MVMZ_MZ_Player.nro
+          cp -R source/SWITCH_HOS/COMPAT_PACK package/switch/mvmzplayer/_compat
 
           printf '%s\n' \
             'NX-MVMZPLAYER GAME FOLDER' \
@@ -137,6 +138,7 @@ jobs:
           (
             cd package/switch/mvmzplayer
             sha256sum MVMZ_Launcher.nro runtime/MVMZ_MV_Player.nro runtime/MVMZ_MZ_Player.nro > SHA256SUMS.txt
+            find _compat -type f -print0 | sort -z | xargs -0 sha256sum >> SHA256SUMS.txt
           )
 
           (
