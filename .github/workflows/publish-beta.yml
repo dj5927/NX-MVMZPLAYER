@@ -8,6 +8,7 @@ on:
       - ".github/workflows/publish-beta.yml"
       - "source/**"
       - "tools/fetch_noto.ps1"
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 permissions:
@@ -96,6 +97,10 @@ jobs:
           TITLE="NX-MVMZPLAYER Public Beta 0.1"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" NX-MVMZPLAYER_Public_Beta_0.1.zip --clobber
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --prerelease \
+              --notes-file CHANGELOG.md
           else
             gh release create "$TAG" NX-MVMZPLAYER_Public_Beta_0.1.zip \
               --target "$GITHUB_SHA" \
