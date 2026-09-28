@@ -4,6 +4,10 @@
 
 ### English
 
+- V049: adds a fixed MV/MZ boot loading bar that is drawn once before game scripts and presented with only a single initial frame handoff. It does not insert per-script progress yields or fake percentages, so engine initialization order/timing remains unchanged after that one frame.
+- MV 0.49.0: adds pressure-aware picture cache/native-resource reclamation. When native heap exceeds 900 MiB, old `img/pictures` cache entries are trimmed toward a 10 MP picture budget (6 MP above 1050 MiB). A retired bitmap is only destroyed after a grace period and only when it is no longer in ImageCache and no current/next/previous scene graph node references its Bitmap/BaseTexture.
+- MV 0.49.0: retired picture cleanup explicitly destroys BaseTexture and releases Canvas/Image/native references instead of relying on repeated global V8/texture GC. Current on-screen pictures, reservations and in-flight decodes are protected.
+- Warm/compiler status remains unchanged: MV/MZ active warm compilers and proactive warm gates stay disabled. The previous on-device warm-manifest approach is considered shelved after device testing showed startup/map latency and compatibility regressions.
 - V048 baseline recovery: removes V047's general startup progress renderer and script-load RAF yields from the active player path, restoring synchronous engine bootstrap timing. Progress callbacks remain only as dormant compiler plumbing for a future explicitly enabled compiler.
 - MV 0.48.0: keeps all warm manifest/map gates disabled, changes exact software PNG decoding from every semi-transparent PNG to indexed-color PNGs with semi-transparent tRNS entries only, preserving the proven Ghosthospital corruption fix while returning large GAME1 illustrations to the native decoder.
 - MV 0.48.0: releases the retained-scene presentation hold as soon as the new scene starts instead of waiting up to four seconds for global image readiness, and keeps the improved pressure policy that performs one hard-pressure GC episode while retaining the normal image-cache limit, with sparse emergency cleanup only at much higher growth.
@@ -21,6 +25,10 @@
 
 ### 한국어
 
+- V049: MV/MZ 공통 고정 부팅 로딩바를 추가했습니다. 게임 스크립트 실행 전에 한 번만 그린 뒤 최초 프레임 1회만 표시하고, 스크립트마다 RAF/yield를 끼우거나 가짜 퍼센트를 올리지 않습니다. 이후 엔진 초기화 순서/타이밍에는 개입하지 않습니다.
+- MV 0.49.0: native heap 압박 시 그림 전용 cache/native 자원 회수를 추가했습니다. 900MiB 이상에서 오래된 `img/pictures` 캐시를 10MP 그림 예산으로 줄이고, 1050MiB 이상에서는 6MP까지 줄입니다. 캐시에서 빠진 Bitmap은 grace period 뒤에도 ImageCache에 없고 현재/다음/이전 scene graph에서 Bitmap/BaseTexture 참조가 없을 때만 실제 native 자원을 해제합니다.
+- MV 0.49.0: 오래된 그림은 반복적인 전역 V8/texture GC에 의존하지 않고 BaseTexture destroy와 Canvas/Image/native 참조 해제를 직접 수행합니다. 현재 화면에 보이는 그림, reservation, decode 진행 중 자산은 보호합니다.
+- warm/compiler 상태는 그대로입니다. MV/MZ active warm compiler와 proactive warm gate는 계속 비활성화합니다. 기존 on-device warm-manifest 방식은 실기에서 시작/맵 지연과 호환성 회귀가 확인되어 일단 보류합니다.
 - V048 기준선 복구: V047에서 추가했던 일반 부팅 진행 렌더러와 스크립트 로딩 중 RAF yield를 active player 경로에서 제거해 엔진 부팅 타이밍을 다시 동기 방식으로 복구했습니다. 진행률 callback은 향후 compiler를 명시적으로 다시 켤 때 사용할 비활성 연결부만 남깁니다.
 - MV 0.48.0: 모든 warm manifest/map gate 비활성 상태를 유지합니다. exact software PNG decode는 모든 반투명 PNG가 아니라 semi-transparent tRNS를 가진 indexed-color PNG에만 적용해 Ghosthospital에서 검증된 색상 복구는 유지하면서 GAME1의 대형 일러스트는 native decoder로 되돌렸습니다.
 - MV 0.48.0: retained scene hold를 전역 이미지 준비 완료까지 최대 4초 기다리지 않고 새 scene start 시점에 해제합니다. 메모리 압박도 정상 ImageCache 용량을 유지한 채 hard-pressure 진입 시 1회 정리하고, 훨씬 높은 메모리 증가에서만 드문 emergency 정리를 수행하는 정책을 유지합니다.

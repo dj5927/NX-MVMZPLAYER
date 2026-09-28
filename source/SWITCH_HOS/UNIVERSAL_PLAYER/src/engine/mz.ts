@@ -1636,7 +1636,7 @@ export async function bootMz(ctx: RuntimeContext, scripts: ScriptLoader) {
   installMZFontBridge(ctx);
   installMZSceneDiagnostics(ctx);
   installMZDamageBitmapCache(ctx);
-  log('[mz-warm] V048 all proactive asset/battle warm paths disabled; on-demand MZ loading restored');
+  log('[mz-warm] V049 all proactive asset/battle warm paths remain disabled; on-demand MZ loading retained');
   if (!ctx.standaloneEngine) installMZHostPump(ctx);
   else installMZStandaloneHostPump(ctx);
   dispatchWindowLoad(log);

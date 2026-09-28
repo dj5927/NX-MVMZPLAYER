@@ -1886,6 +1886,199 @@ function installMvImageCachePolicy(ctx) {
   }
   ctx.log(`[mv-mem] ImageCache.limit=${(limit / 1e6).toFixed(0)}MP nativeTotalMiB=${(total / 1048576).toFixed(1)}`);
 }
+function installMvPictureMemoryReclaimer(ctx) {
+  const g = globalThis;
+  const cache = g.ImageManager?._imageCache;
+  const proto = g.ImageCache?.prototype;
+  if (!cache || !proto || typeof proto._truncateCache !== "function") {
+    ctx.log("[mv-picture-gc] skipped | ImageCache unavailable");
+    return;
+  }
+  const retired = /* @__PURE__ */ new Map();
+  let releaseLogs = 0;
+  let trimLogs = 0;
+  const bitmapUrl = (bitmap) => String(bitmap?._url || bitmap?.__mvmzSourceUrl || bitmap?._image?.src || "").replace(/\\/g, "/");
+  const isPictureBitmap = (bitmap) => /(?:^|\/)img\/pictures\//i.test(bitmapUrl(bitmap));
+  const pixelsFor = (bitmap) => Math.max(1, Number(bitmap?.width || bitmap?.__canvas?.width || bitmap?._canvas?.width || 1)) * Math.max(1, Number(bitmap?.height || bitmap?.__canvas?.height || bitmap?._canvas?.height || 1));
+  const sceneUsesBitmap = (bitmap) => {
+    const baseTexture = bitmap?.__baseTexture || bitmap?._baseTexture || bitmap?.baseTexture || null;
+    const roots = [g.SceneManager?._scene, g.SceneManager?._nextScene, g.SceneManager?._previousScene].filter(Boolean);
+    const visited = /* @__PURE__ */ new Set();
+    const walk = (node) => {
+      if (!node || visited.has(node)) return false;
+      visited.add(node);
+      try {
+        if (node.bitmap === bitmap) return true;
+        if (baseTexture && node.texture?.baseTexture === baseTexture) return true;
+      } catch {
+      }
+      const children = Array.isArray(node.children) ? node.children : [];
+      for (const child of children) if (walk(child)) return true;
+      return false;
+    };
+    for (const root of roots) if (walk(root)) return true;
+    return false;
+  };
+  const bitmapStillCached = (bitmap) => {
+    try {
+      const items = cache?._items || {};
+      for (const key of Object.keys(items)) if (items[key]?.bitmap === bitmap) return true;
+    } catch {
+    }
+    return false;
+  };
+  const retireBitmap = (bitmap, reason) => {
+    if (!bitmap || !isPictureBitmap(bitmap) || retired.has(bitmap)) return;
+    retired.set(bitmap, {
+      bitmap,
+      url: bitmapUrl(bitmap),
+      pixels: pixelsFor(bitmap),
+      retiredAt: Number(performance.now?.() || Date.now()),
+      reason
+    });
+  };
+  const destroyRetiredBitmap = (entry) => {
+    const bitmap = entry.bitmap;
+    if (!bitmap) return false;
+    try {
+      const baseTextures = [];
+      for (const candidate of [bitmap.__baseTexture, bitmap._baseTexture, bitmap.baseTexture]) {
+        if (candidate && !baseTextures.includes(candidate)) baseTextures.push(candidate);
+      }
+      for (const baseTexture of baseTextures) {
+        try { baseTexture.destroy?.(); } catch {
+        }
+      }
+      const canvases = [];
+      for (const candidate of [bitmap.__canvas, bitmap._canvas, bitmap._image]) {
+        if (candidate && typeof candidate === "object" && typeof candidate.width === "number" && !canvases.includes(candidate)) canvases.push(candidate);
+      }
+      for (const canvas of canvases) {
+        try {
+          canvas.width = 1;
+          canvas.height = 1;
+        } catch {
+        }
+      }
+      try {
+        bitmap.__canvas = null;
+        bitmap.__context = null;
+      } catch {
+      }
+      try {
+        bitmap._image = null;
+        bitmap._canvas = null;
+        bitmap._context = null;
+      } catch {
+      }
+      try { bitmap._baseTexture = null; } catch {
+      }
+      try { bitmap.__baseTexture = null; } catch {
+      }
+      try {
+        bitmap.__mvmzGpuPrepared = false;
+        bitmap.__mvmzGpuPrepareWaiters = [];
+        bitmap._loadingState = "purged";
+      } catch {
+      }
+      return true;
+    } catch (error) {
+      ctx.log(`[mv-picture-gc] release FAILED | ${entry.url} | ${String(error)}`);
+      return false;
+    }
+  };
+  if (!proto._truncateCache.__mvmzPictureRetireHook) {
+    const originalTruncate = proto._truncateCache;
+    const patchedTruncate = function() {
+      const before = [];
+      try {
+        const items = this?._items || {};
+        for (const key of Object.keys(items)) {
+          const item = items[key];
+          if (item?.bitmap && isPictureBitmap(item.bitmap)) before.push([key, item.bitmap]);
+        }
+      } catch {
+      }
+      const result = originalTruncate.apply(this, arguments);
+      try {
+        const items = this?._items || {};
+        for (const [key, bitmap] of before) if (!items[key]) retireBitmap(bitmap, "ImageCache-LRU");
+      } catch {
+      }
+      return result;
+    };
+    patchedTruncate.__mvmzPictureRetireHook = true;
+    proto._truncateCache = patchedTruncate;
+  }
+  const pressureTrim = (usedMiB) => {
+    const items = cache?._items || {};
+    const pictures = [];
+    for (const key of Object.keys(items)) {
+      const item = items[key];
+      const bitmap = item?.bitmap;
+      if (!bitmap || !isPictureBitmap(bitmap)) continue;
+      pictures.push({ key, item, bitmap, pixels: pixelsFor(bitmap), touch: Number(item.touch || 0) });
+    }
+    pictures.sort((a, b) => b.touch - a.touch);
+    const budgetMP = usedMiB >= 1050 ? 6 : 10;
+    let budget = budgetMP * 1e6;
+    let evicted = 0;
+    let evictedPixels = 0;
+    for (const pic of pictures) {
+      const held = !!pic.item?.reservationId || pic.bitmap?._loadingState === "requesting" || pic.bitmap?._loadingState === "decrypting" || sceneUsesBitmap(pic.bitmap);
+      if (held) {
+        budget -= pic.pixels;
+        continue;
+      }
+      if (budget > 0) {
+        budget -= pic.pixels;
+        continue;
+      }
+      if (items[pic.key] === pic.item) {
+        delete items[pic.key];
+        retireBitmap(pic.bitmap, `pressure-${budgetMP}MP`);
+        evicted++;
+        evictedPixels += pic.pixels;
+      }
+    }
+    if (evicted && trimLogs < 24) {
+      trimLogs++;
+      ctx.log(`[mv-picture-gc] pressure trim | usedMiB=${usedMiB.toFixed(1)} budgetMP=${budgetMP} evicted=${evicted} evictedMP=${(evictedPixels / 1e6).toFixed(1)} cachePictures=${pictures.length} retired=${retired.size}`);
+      if (trimLogs === 24) ctx.log("[mv-picture-gc] further trim logs suppressed");
+    }
+  };
+  setInterval(() => {
+    let usedMiB = 0;
+    try {
+      usedMiB = Number(Switch.memoryUsage().nativeHeapUsed || 0) / 1048576;
+    } catch {
+    }
+    if (usedMiB >= 900) pressureTrim(usedMiB);
+    const now = Number(performance.now?.() || Date.now());
+    const graceMs = usedMiB >= 1050 ? 350 : 1200;
+    for (const [bitmap, entry] of [...retired.entries()]) {
+      if (bitmapStillCached(bitmap)) {
+        retired.delete(bitmap);
+        continue;
+      }
+      if (now - entry.retiredAt < graceMs) continue;
+      if (bitmap?.__mvmzGpuPrepareInFlight) continue;
+      if (sceneUsesBitmap(bitmap)) {
+        entry.retiredAt = now;
+        continue;
+      }
+      if (destroyRetiredBitmap(entry)) {
+        retired.delete(bitmap);
+        if (releaseLogs < 32) {
+          releaseLogs++;
+          ctx.log(`[mv-picture-gc] native release | ${entry.url} pixels=${entry.pixels} reason=${entry.reason} remaining=${retired.size}`);
+          if (releaseLogs === 32) ctx.log("[mv-picture-gc] further release logs suppressed");
+        }
+      }
+    }
+  }, 500);
+  ctx.log("[mv-picture-gc] installed | pressure>=900MiB pictureBudget=10MP >=1050MiB pictureBudget=6MP scene-reference-safe native release");
+}
 function installMvAssetPrewarmBridge(ctx) {
   const g = globalThis;
   const mapProto = g.Game_Map?.prototype;
@@ -2407,7 +2600,8 @@ export async function bootMv(ctx, scripts) {
   installMvGraphicsPerformanceBridge(ctx);
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
-  log('[mv-warm] V048 all manifest/map warm gates disabled; natural on-demand MV loading restored');
+  installMvPictureMemoryReclaimer(ctx);
+  log('[mv-warm] V049 all manifest/map warm gates remain disabled; natural on-demand MV loading retained');
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
   if (!g.Utils || g.Utils.RPGMAKER_NAME !== "MV") {

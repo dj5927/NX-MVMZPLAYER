@@ -7,6 +7,7 @@ import { installPointerBridge } from '../../UNIVERSAL_PLAYER/src/host/pointer';
 import { ScriptLoader } from '../../UNIVERSAL_PLAYER/src/host/scripts';
 import { installGameExitConfirmation } from '../../UNIVERSAL_PLAYER/src/host/exit_confirm';
 import { installNxPlusExitGuard } from '../../UNIVERSAL_PLAYER/src/host/plus_exit_guard';
+import { drawStaticLoadingBar, presentStaticLoadingFrame } from '../../UNIVERSAL_PLAYER/src/host/static_loading';
 import { bootMv } from '../../UNIVERSAL_PLAYER/src/engine/mv';
 import { bootMz } from '../../UNIVERSAL_PLAYER/src/engine/mz';
 import type { EngineKind, GameInfo, RuntimeContext } from '../../UNIVERSAL_PLAYER/src/types';
@@ -88,6 +89,8 @@ export async function runEngine(expectedEngine: EngineKind, playerVersion = '0.3
   const game: GameInfo = { name, root: gameRoot, dataRoot, engine: expectedEngine, id };
   const rawGl = screen.getContext('webgl2');
   if (!rawGl) throw new Error('WebGL2 context creation failed');
+  drawStaticLoadingBar(rawGl, expectedEngine, name, log);
+  await presentStaticLoadingFrame();
   log('WebGL2 renderer=' + rawGl.getParameter(rawGl.RENDERER) + ' vendor=' + rawGl.getParameter(rawGl.VENDOR));
   logger.flush();
 
