@@ -1,3 +1,13 @@
+## 2026-09-29 - V071 MV common hot-asset caching
+
+- Add a 48 MiB bounded decrypted/compressed image-byte LRU so repeated MV image loads can skip SD reads and encrypted-image decrypt work.
+- Restore meaningful MV RequestQueue preloading: animations, characters, tilesets, system, particles and faces are proactively decoded before first use; other request-only images at least prefetch bytes.
+- Add a 16 MP decoded secondary hot cache for repeat graphical assets while excluding large `img/pictures/` content.
+- Hot caches temporarily shrink under high native-memory pressure and then recover their normal limits.
+- Keep BGM/BGS/ME on native streaming but return short SE to WebAudio, with decoded AudioBuffer reuse before XHR. Repeated footsteps/effects no longer re-read encrypted source data after the first decode.
+- Rate-limit repeated per-bitmap decode-wait diagnostics.
+- Bump MV player to 0.71.0 and Yariste compat marker to v071; MZ distribution remains exact V059.
+
 ## 2026-09-29 - V070 Switch pre-log parser compatibility
 
 - V069 launcher handoff succeeded, but the MV player produced no log and no loading bar.
