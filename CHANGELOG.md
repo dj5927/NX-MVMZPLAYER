@@ -1,3 +1,12 @@
+## 2026-09-29 - V072 V070 stability rollback + slow-frame profiler
+
+- Reject V071 as a runtime candidate after device testing showed almost no hitch improvement and an early native-style crash with no JS FATAL.
+- Restore MV runtime behavior exactly to V070, except for a diagnostic-only slow-frame profiler.
+- Remove V071 decoded hot Bitmap/BaseTexture retention, 48 MiB image-byte cache, request predecode, and WebAudio SE memory-cache changes.
+- Add low-overhead slow-frame classification for outside/native stall vs render vs game/map/event logic, with pending-image and memory context.
+- Keep Yariste 107 lexical bindings, lazy template compatibility, Buffer/fs compatibility, error bridge and picture reclaimer disabled.
+- MZ distribution remains exact V059.
+
 ## 2026-09-29 - V071 MV common hot-asset caching
 
 - Add a 48 MiB bounded decrypted/compressed image-byte LRU so repeated MV image loads can skip SD reads and encrypted-image decrypt work.
