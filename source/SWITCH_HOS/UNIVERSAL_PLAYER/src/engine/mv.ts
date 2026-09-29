@@ -2432,7 +2432,7 @@ function installMvAssetPrewarmBridge(ctx) {
   mapProto.setup = function(mapId) {
     const result = originalSetup.call(this, mapId);
     beginMapWarmGate(Number(mapId || 0));
-    return res    return result;
+    return result;
   };
   const originalSceneMapIsReady = sceneMapProto.isReady;
   sceneMapProto.isReady = function() {
