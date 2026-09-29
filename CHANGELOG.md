@@ -1,3 +1,11 @@
+## 2026-09-29 - V070 Switch pre-log parser compatibility
+
+- V069 launcher handoff succeeded, but the MV player produced no log and no loading bar.
+- Remove Unicode RegExp property escapes (\p{ID_Start}/\p{ID_Continue}) from ScriptLoader because older nx.js/V8 may reject them before module execution.
+- Replace them with an old-V8-safe manual compat identifier filter while preserving all 107 Yariste Unicode lexical bindings.
+- Keep Yariste picture reclaimer disabled, Yanfly error logging, Buffer/openSync compatibility, and lazy template loading unchanged.
+- Bump MV split player to 0.70.0. MZ remains exact 0.59.0.
+
 ## 2026-09-29 - V068 MV Node Buffer/openSync compatibility
 
 - V067 device test passed the earlier Yariste lexical blockers and later exposed `Buffer is not defined` from Common Event 55.

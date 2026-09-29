@@ -3,13 +3,29 @@ import type { LogFn } from '../types';
 
 export type ScriptLoaderMode = 'legacy' | 'shared-lexical' | 'mv-batch';
 
-// Browser classic scripts may use the full ECMAScript IdentifierName space.
-// Some Japanese RPG Maker projects intentionally declare top-level lexical
-// helpers with CJK identifiers and later reference them from event eval().
-// Keep the compat allow-list strict, but do not incorrectly restrict it to
-// ASCII-only identifiers.
-const SCRIPT_IDENTIFIER_RE = /^[$_\p{ID_Start}][$\u200C\u200D_\p{ID_Continue}]*$/u;
-const isScriptIdentifier = (name: string) => SCRIPT_IDENTIFIER_RE.test(name);
+// Browser classic scripts may use non-ASCII identifiers. Do not use Unicode
+// property escapes here: the Switch nx.js/V8 build is older than the desktop
+// toolchain and must be able to parse this file before logging can start.
+// Compat names are explicit allow-list entries, so a conservative syntax
+// filter is enough: ASCII identifier chars plus non-ASCII non-whitespace.
+const isScriptIdentifier = (name: string) => {
+  if (!name) return false;
+  let index = 0;
+  for (const ch of name) {
+    if (/\s/.test(ch)) return false;
+    const code = ch.codePointAt(0) || 0;
+    const asciiLetter =
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122);
+    const asciiDigit = code >= 48 && code <= 57;
+    const asciiSpecial = code === 36 || code === 95; // $ _
+    if (code < 128) {
+      if (!(asciiLetter || asciiSpecial || (index > 0 && asciiDigit))) return false;
+    }
+    index++;
+  }
+  return true;
+};
 
 type ScriptElement = {
   src?: string;
