@@ -620,11 +620,16 @@ function tryLoadMvRawCache(ctx, bitmap, url, expectedState) {
     return false;
   }
 }
-var MV_IMAGE_DECODE_CONCURRENCY = 2;
 var mvImageDecodeActive = 0;
 var mvImageDecodeWaiters = [];
+function mvImageDecodeConcurrency() {
+  const g = globalThis;
+  const configured = Number(g.__mvmzCompatApi?.config?.mvBandwidthGuard?.decodeConcurrency);
+  if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(4, Math.floor(configured)));
+  return 2;
+}
 async function withMvImageDecodeSlot(work) {
-  if (mvImageDecodeActive >= MV_IMAGE_DECODE_CONCURRENCY) {
+  if (mvImageDecodeActive >= mvImageDecodeConcurrency()) {
     await new Promise((resolve) => mvImageDecodeWaiters.push(resolve));
   }
   mvImageDecodeActive++;
@@ -721,7 +726,22 @@ async function decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState) {
     syncMvBitmapBaseTexture(ctx, bitmap, canvas, url);
     bitmap._loadingState = "loaded";
     bitmap._setDirty();
-    queueMvGpuPrepare(ctx, bitmap, url);
+    const bandwidthGuard = g.__mvmzCompatApi?.config?.mvBandwidthGuard;
+    if (bandwidthGuard?.serializeDecodeThroughGpuUpload) {
+      const timeoutMs = Math.max(50, Math.min(1000, Number(bandwidthGuard.uploadWaitTimeoutMs || 250)));
+      await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve(undefined);
+        };
+        queueMvGpuPrepare(ctx, bitmap, url, finish);
+        setTimeout(finish, timeoutMs);
+      });
+    } else {
+      queueMvGpuPrepare(ctx, bitmap, url);
+    }
     bitmap._callLoadListeners();
     try {
       g.ImageManager?._imageCache?._truncateCache?.();
@@ -1887,7 +1907,19 @@ function installMvImageCachePolicy(ctx) {
   }
   ctx.log(`[mv-mem] ImageCache.limit=${(limit / 1e6).toFixed(0)}MP nativeTotalMiB=${(total / 1048576).toFixed(1)}`);
 }
-function installMvPictureMemoryReclaimer(ctx) {
+function installMvBandwidthGuard(ctx) {
+  const g = globalThis;
+  const config = g.__mvmzCompatApi?.config?.mvBandwidthGuard;
+  if (!config?.enabled) return;
+  const decodeConcurrency = mvImageDecodeConcurrency();
+  const uploadsPerFrame = Math.max(1, Math.min(4, Math.floor(Number(config.gpuUploadsPerFrame || 1))));
+  try {
+    const limiter = g.Graphics?._renderer?.plugins?.prepare?.limiter;
+    if (limiter && typeof limiter.maxItemsPerFrame === "number") limiter.maxItemsPerFrame = uploadsPerFrame;
+  } catch {}
+  try { if (g.PIXI?.settings) g.PIXI.settings.UPLOADS_PER_FRAME = uploadsPerFrame; } catch {}
+  ctx.log(`[mv-bandwidth] guard installed | decodeConcurrency=${decodeConcurrency} gpuUploadsPerFrame=${uploadsPerFrame} serializeDecodeThroughGpuUpload=${!!config.serializeDecodeThroughGpuUpload}`);
+}function installMvPictureMemoryReclaimer(ctx) {
   const g = globalThis;
   const pictureConfig = g.__mvmzCompatApi?.config?.mvPictureMemory;
   if (pictureConfig?.reclaimer === false || pictureConfig?.enabled === false) {
@@ -2607,6 +2639,7 @@ export async function bootMv(ctx, scripts) {
   installMvGraphicsPerformanceBridge(ctx);
   installMvNativeVideoBridge(ctx);
   installMvImageCachePolicy(ctx);
+  installMvBandwidthGuard(ctx);
   installMvPictureMemoryReclaimer(ctx);
   log('[mv-warm] V052 all manifest/map warm gates remain disabled; natural on-demand MV loading retained');
   installMvSlowFrameProfiler(ctx);
