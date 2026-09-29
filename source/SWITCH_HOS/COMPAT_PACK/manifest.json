@@ -35,7 +35,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v072",
+      "id": "game.yariste.mv.boot.v073",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -183,6 +183,16 @@
         },
         "mvPictureMemory": {
           "reclaimer": false
+        },
+        "mvTextureGc": {
+          "enabled": false
+        },
+        "mvBandwidthGuard": {
+          "enabled": true,
+          "decodeConcurrency": 1,
+          "gpuUploadsPerFrame": 1,
+          "serializeDecodeThroughGpuUpload": true,
+          "uploadWaitTimeoutMs": 250
         }
       },
       "scripts": {
