@@ -29,6 +29,43 @@
           "scripts/games/garun_audio_diag.js"
         ]
       }
+    },
+    {
+      "id": "game.yariste.mv.boot.v060",
+      "enabled": true,
+      "priority": 1100,
+      "match": {
+        "engine": "MV",
+        "pluginCount": 99,
+        "pluginSetFingerprint": "086c7ef9",
+        "coreFingerprint": "a0c92a8c",
+        "pluginsAll": [
+          "JsScript104Set",
+          "JsScript109Set",
+          "JsScript115Set",
+          "JsScript15Set"
+        ],
+        "filesAll": [
+          "js/plugins/JsScript104Set.js",
+          "js/plugins/JsScript109Set.js",
+          "js/plugins/JsScript115Set.js",
+          "js/plugins/JsScript15Set.js"
+        ]
+      },
+      "settings": {
+        "mvTemplateEvents": {
+          "pluginName": "JsScript104Set",
+          "sliceMs": 8,
+          "progressEvery": 128,
+          "memoizeDatabaseReady": true
+        }
+      },
+      "scripts": {
+        "post_plugins": [
+          "scripts/plugin/mv_template_events_async.js",
+          "scripts/games/yariste_boot_diag.js"
+        ]
+      }
     }
   ]
 }

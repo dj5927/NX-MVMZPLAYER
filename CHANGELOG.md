@@ -1,3 +1,13 @@
+## 2026-09-29 - V060 MV Yariste boot compatibility
+
+- Pause MZ optimization; keep the V059 MZ player binary/source unchanged for this candidate.
+- Add content-matched `game.yariste.mv.boot.v060` for the 99-plugin Yariste MV 1.6.1 build; folder name is not used.
+- Replace only the giant TemplateEvent Scene_Boot map preload with native async `Switch.readFile()` plus time-sliced events-only parsing.
+- Preserve TemplateMapId/TemplateMapSecId semantics, metadata extraction, event ordering/IDs/null slots, and secondary-map append behavior.
+- Actual Korean Map001/Map045 semantic verification: 1518 expected vs 1518 actual, full serialized equality true.
+- Latch `DataManager.isDatabaseLoaded()` after its first true result so the Steamworks notetag wrapper does not re-run on each boot readiness poll.
+- Bump MV split player to 0.60.0. MZ remains 0.59.0. Public release remains unchanged.
+
 ## 2026-09-29 - V059 folder-independent compatibility identity
 
 - Keep V058 runtime behavior; V059 changes compatibility routing only.
