@@ -1,3 +1,13 @@
+## 2026-09-29 - V068 MV Node Buffer/openSync compatibility
+
+- V067 device test passed the earlier Yariste lexical blockers and later exposed `Buffer is not defined` from Common Event 55.
+- Add common MV/NW.js global `Buffer` plus `require('buffer')` compatibility with utf8/base64/hex/latin1/ascii support.
+- Add `fs.openSync` / `fs.closeSync` to the existing MV fs shim; the same event uses openSync immediately after Buffer decode.
+- Full executable game-data Node API audit found only `require('fs')`, global `Buffer`, `fs.existsSync`, and `fs.openSync`.
+- Exact Common Event 55 host probe passes through the real compatibility layer.
+- Bump MV split player to 0.68.0 and Yariste rule marker to v068; keep 70 content-specific lexical bindings unchanged.
+- MZ remains exact 0.59.0.
+
 ## 2026-09-29 - V067 Yariste BOM-safe event lexical audit
 
 - V066 progressed into Map003 and exposed `DelSprite is not defined` from an event Script.
