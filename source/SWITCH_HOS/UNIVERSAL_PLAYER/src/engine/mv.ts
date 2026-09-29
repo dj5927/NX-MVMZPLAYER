@@ -1888,6 +1888,11 @@ function installMvImageCachePolicy(ctx) {
 }
 function installMvPictureMemoryReclaimer(ctx) {
   const g = globalThis;
+  const pictureConfig = g.__mvmzCompatApi?.config?.mvPictureMemory;
+  if (pictureConfig?.reclaimer === false || pictureConfig?.enabled === false) {
+    ctx.log("[mv-picture-gc] disabled by compat | standard ImageCache LRU + generic texture/V8 pressure GC only");
+    return;
+  }
   const cache = g.ImageManager?._imageCache;
   const proto = g.ImageCache?.prototype;
   if (!cache || !proto || typeof proto._truncateCache !== "function") {

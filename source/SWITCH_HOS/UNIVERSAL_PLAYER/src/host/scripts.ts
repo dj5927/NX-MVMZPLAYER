@@ -3,6 +3,14 @@ import type { LogFn } from '../types';
 
 export type ScriptLoaderMode = 'legacy' | 'shared-lexical' | 'mv-batch';
 
+// Browser classic scripts may use the full ECMAScript IdentifierName space.
+// Some Japanese RPG Maker projects intentionally declare top-level lexical
+// helpers with CJK identifiers and later reference them from event eval().
+// Keep the compat allow-list strict, but do not incorrectly restrict it to
+// ASCII-only identifiers.
+const SCRIPT_IDENTIFIER_RE = /^[$_\p{ID_Start}][$\u200C\u200D_\p{ID_Continue}]*$/u;
+const isScriptIdentifier = (name: string) => SCRIPT_IDENTIFIER_RE.test(name);
+
 type ScriptElement = {
   src?: string;
   type?: string;
@@ -158,7 +166,7 @@ export class ScriptLoader {
     if (!Array.isArray(rawNames)) return source;
     const names = rawNames
       .map((name: any) => String(name || '').trim())
-      .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name));
+      .filter((name: string) => isScriptIdentifier(name));
     if (!names.length) return source;
     const trailer = names.map((name: string) =>
       `;try{Object.defineProperty(globalThis,${JSON.stringify(name)},{configurable:true,enumerable:true,get:()=>${name},set:(_mvmzValue)=>{${name}=_mvmzValue;}});}catch(_mvmzScriptLexicalBindError){}`
@@ -283,12 +291,12 @@ export class ScriptLoader {
     const configuredLexicalExports = Array.isArray(g.__mvmzCompatApi?.config?.scriptLoader?.mvBatchGlobalLexicalExports)
       ? g.__mvmzCompatApi.config.scriptLoader.mvBatchGlobalLexicalExports
           .map((name: any) => String(name || '').trim())
-          .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name))
+          .filter((name: string) => isScriptIdentifier(name))
       : [];
     const configuredLexicalBindings = Array.isArray(g.__mvmzCompatApi?.config?.scriptLoader?.mvBatchGlobalLexicalLiveBindings)
       ? g.__mvmzCompatApi.config.scriptLoader.mvBatchGlobalLexicalLiveBindings
           .map((name: any) => String(name || '').trim())
-          .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name))
+          .filter((name: string) => isScriptIdentifier(name))
       : [];
     const exportedLexicals: string[] = [];
     const boundLexicals: string[] = [];
@@ -301,90 +309,4 @@ export class ScriptLoader {
       g[name] = value;
       exportedLexicals.push(name);
     };
-    g.__mvmzPluginBatchLexicalBind = (name: string, getter: () => any, setter: (value: any) => void) => {
-      Object.defineProperty(g, name, {
-        configurable: true,
-        enumerable: true,
-        get: getter,
-        set: setter
-      });
-      boundLexicals.push(name);
-    };
-    const pieces: string[] = [];
-    for (let i = 0; i < batch.length; i++) {
-      const entry = batch[i];
-      for (const hook of this.beforeHooks) await hook(normalizeRelativePath(entry.relative));
-      const raw = this.fs.readText(entry.relative);
-      pieces.push(`\n;globalThis.__mvmzPluginBatchSetCurrent(${i});\n${raw}\n`);
-    }
-    if (configuredLexicalExports.length) {
-      pieces.push(
-        configuredLexicalExports.map((name: string) =>
-          `\n;try{globalThis.__mvmzPluginBatchLexicalExport(${JSON.stringify(name)},${name});}catch(_mvmzLexicalExportError){}\n`
-        ).join('')
-      );
-    }
-    if (configuredLexicalBindings.length) {
-      pieces.push(
-        configuredLexicalBindings.map((name: string) =>
-          `\n;try{globalThis.__mvmzPluginBatchLexicalBind(${JSON.stringify(name)},()=>${name},(_mvmzValue)=>{${name}=_mvmzValue;});}catch(_mvmzLexicalBindError){}\n`
-        ).join('')
-      );
-    }
-    this.log(`[script] MV classic batch begin | count=${batch.length}`);
-    try {
-      (0, eval)(pieces.join('\n'));
-      if (configuredLexicalExports.length) {
-        this.log(`[script] MV classic lexical export | requested=${configuredLexicalExports.join(',')} exported=${exportedLexicals.join(',') || 'none'}`);
-      }
-      if (configuredLexicalBindings.length) {
-        this.log(`[script] MV classic lexical live-bind | requested=${configuredLexicalBindings.join(',')} bound=${boundLexicals.join(',') || 'none'}`);
-      }
-      for (let i = 0; i < batch.length; i++) {
-        const entry = batch[i];
-        this.log(`[script] OK ${entry.relative}`);
-        for (const hook of this.afterHooks) await hook(normalizeRelativePath(entry.relative));
-        entry.element?.onload?.({ target: entry.element } as any);
-      }
-      this.log(`[script] MV classic batch PASS | count=${batch.length}`);
-    } catch (error) {
-      const entry = currentIndex >= 0 ? batch[currentIndex] : null;
-      const path = entry?.relative ?? 'parse/before-first-script';
-      const detail = `${String((error as any)?.name ?? 'Error')}: ${String((error as any)?.message ?? error)}`;
-      this.log(`[script] MV classic batch FAILED | index=${currentIndex} path=${path} | ${detail} | ${String((error as any)?.stack ?? '')}`);
-      entry?.element?.onerror?.({ target: entry.element, error } as any);
-      throw error;
-    } finally {
-      if (doc) doc.currentScript = previous;
-      if (previousSetter === undefined) delete g.__mvmzPluginBatchSetCurrent; else g.__mvmzPluginBatchSetCurrent = previousSetter;
-      if (previousIndex === undefined) delete g.__mvmzPluginBatchIndex; else g.__mvmzPluginBatchIndex = previousIndex;
-      if (previousLexicalExporter === undefined) delete g.__mvmzPluginBatchLexicalExport; else g.__mvmzPluginBatchLexicalExport = previousLexicalExporter;
-      if (previousLexicalBinder === undefined) delete g.__mvmzPluginBatchLexicalBind; else g.__mvmzPluginBatchLexicalBind = previousLexicalBinder;
-    }
-  }
-
-  async drain() {
-    while (true) {
-      if (this.mode === 'mv-batch' && this.pluginBatch.length) {
-        await this.flushPluginBatch();
-      }
-      const current = this.tail;
-      await current;
-      await Promise.resolve();
-      if (current === this.tail && this.pending === 0) return;
-    }
-  }
-
-  private enqueueScriptElement(element: ScriptElement, document: any) {
-    const rel = normalizeRelativePath(String(element.src));
-    const lower = rel.toLowerCase();
-    const browserLibrary = /(?:^|\/)js\/libs\//i.test(rel) ||
-      /(?:pixi|pako|localforage|effekseer|vorbisdecoder|lz-string|fpsmeter)/i.test(lower);
-    if (this.mode === 'mv-batch' && !this.pluginBatchFlushed && /^js\/plugins\/.+\.js$/i.test(rel) && !browserLibrary) {
-      this.pluginBatch.push({ relative: rel, element, document });
-      this.log(`[script] queued for MV classic batch ${rel}`);
-      return;
-    }
-    this.enqueue(rel, browserLibrary, element, document);
-  }
-}
+    g.__mvmzPluginBatchLexicalBind = (name: str

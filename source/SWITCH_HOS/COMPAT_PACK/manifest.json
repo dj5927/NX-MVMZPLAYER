@@ -21,7 +21,11 @@
       "settings": {
         "mzAudio": {
           "streamLifecycleDiagnostics": true,
-          "progressSamplesMs": [500, 1500, 3000]
+          "progressSamplesMs": [
+            500,
+            1500,
+            3000
+          ]
         }
       },
       "scripts": {
@@ -31,7 +35,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v068",
+      "id": "game.yariste.mv.boot.v069",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -112,19 +116,56 @@
             "laboSetMonIds",
             "menuBoxOpenFlg",
             "menuOffFlame",
-            "saveCheckFlg"
-            ,"DelSprite"
-            ,"NN_PAnime"
-            ,"PL_realX"
-            ,"PL_realY"
-            ,"PL_winX"
-            ,"PL_winY"
-            ,"PN_DbgMenuF3Btn"
-            ,"PN_HScene"
-            ,"PN_PicFlameTop"
-            ,"PN_QSave"
-            ,"PN_ftEnd"
-            ,"PN_fwChara"
+            "saveCheckFlg",
+            "DelSprite",
+            "NN_PAnime",
+            "PL_realX",
+            "PL_realY",
+            "PL_winX",
+            "PL_winY",
+            "PN_DbgMenuF3Btn",
+            "PN_HScene",
+            "PN_PicFlameTop",
+            "PN_QSave",
+            "PN_ftEnd",
+            "PN_fwChara",
+            "_テンポCount",
+            "_フレーム上Hint非表示",
+            "_フレーム上Hint表示",
+            "_フレーム上情報非表示",
+            "_フレーム上情報表示",
+            "_演出切り替えFlg",
+            "_次のHTalk開始はWinPic非表示",
+            "_手動_WazaReSet",
+            "_手動_WazaSet",
+            "_吹き出しテンポ戻しFlg",
+            "_即演出Flg",
+            "_文字白色Flg",
+            "befHintTop表示",
+            "BtlLabo_ヤリモン変化Type",
+            "BtlLaboDebug選択回戦No",
+            "Btl開始EffFlg",
+            "BトレーナーLv上げないFlg",
+            "Check勝利トレーナーID",
+            "DelSpriteSpan",
+            "DLC2モンスター戦闘前保存",
+            "GetEC難易度",
+            "Map移動_psName",
+            "Menu回想Flg",
+            "MovePict",
+            "MoveSprite",
+            "MoveSpriteAdd",
+            "PlayBgm",
+            "Player",
+            "Reset吹き出しテンポ",
+            "SetPictFIn",
+            "SetSprite",
+            "SpriteNoCng",
+            "Txt種類",
+            "Vガベージコレクション実行",
+            "YarimonData",
+            "ヤリモン取得チェック",
+            "特殊野生戦闘Flg"
           ],
           "mvScriptGlobalLexicalLiveBindings": {
             "js/rpg_windows.js": [
@@ -139,6 +180,9 @@
           "scanBytesPerYield": 65536,
           "progressEvery": 256,
           "memoizeDatabaseReady": true
+        },
+        "mvPictureMemory": {
+          "reclaimer": false
         }
       },
       "scripts": {
