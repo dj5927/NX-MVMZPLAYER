@@ -1,3 +1,12 @@
+## 2026-09-29 - V066 Yariste complete classic-script lexical bridge
+
+- V065 now boots and renders Yariste successfully, then exposed later classic-script lexical gaps in event Script eval and core-to-plugin access.
+- Audit all 99 active plugins and all data/data_cn/data_en/data_ko/data_tc JSON strings.
+- Bind 54 plugin top-level let/const names used as bare identifiers by game data, plus the existing four core/library dependencies.
+- Add content-scoped `mvScriptGlobalLexicalLiveBindings` support and use it for `js/rpg_windows.js -> MainTextUpdateFlg`.
+- Keep V063 lazy-template behavior and current memory/render policy unchanged.
+- Bump MV split player to 0.66.0. MZ remains exact 0.59.0.
+
 ## 2026-09-29 - V065 Yariste PIXI lexical binding
 
 - V064 device test reached Scene_Map and confirmed the previous BtlStopEventFlame failure is fixed.

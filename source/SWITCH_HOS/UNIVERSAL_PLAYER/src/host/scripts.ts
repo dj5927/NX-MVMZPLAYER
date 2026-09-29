@@ -145,6 +145,28 @@ export class ScriptLoader {
     return `${source}\n${trailer}`;
   }
 
+  private appendConfiguredScriptLexicalBindings(relative: string, source: string) {
+    const g: any = globalThis as any;
+    const configured = g.__mvmzCompatApi?.config?.scriptLoader?.mvScriptGlobalLexicalLiveBindings;
+    if (!configured || typeof configured !== 'object' || Array.isArray(configured)) return source;
+    const rel = normalizeRelativePath(relative);
+    let rawNames: any = configured[rel];
+    if (!Array.isArray(rawNames)) {
+      const key = Object.keys(configured).find(k => normalizeRelativePath(k).toLowerCase() === rel.toLowerCase());
+      rawNames = key ? configured[key] : null;
+    }
+    if (!Array.isArray(rawNames)) return source;
+    const names = rawNames
+      .map((name: any) => String(name || '').trim())
+      .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name));
+    if (!names.length) return source;
+    const trailer = names.map((name: string) =>
+      `;try{Object.defineProperty(globalThis,${JSON.stringify(name)},{configurable:true,enumerable:true,get:()=>${name},set:(_mvmzValue)=>{${name}=_mvmzValue;}});}catch(_mvmzScriptLexicalBindError){}`
+    ).join('\n');
+    this.log(`[script] configured script lexical live-bind | path=${rel} names=${names.join(',')}`);
+    return `${source}\n${trailer}`;
+  }
+
   onAfterScript(hook: (relative: string) => void | Promise<void>) {
     this.afterHooks.push(hook);
   }
@@ -210,7 +232,10 @@ export class ScriptLoader {
 
   loadNow(relative: string, browserLibrary = false, scriptElement?: any, document?: any) {
     const rel = normalizeRelativePath(relative);
-    const source = this.promoteBrowserScriptGlobals(rel, this.fs.readText(rel));
+    const source = this.appendConfiguredScriptLexicalBindings(
+      rel,
+      this.promoteBrowserScriptGlobals(rel, this.fs.readText(rel))
+    );
     const element = scriptElement ?? { src: rel, tagName: 'SCRIPT' };
     if (browserLibrary) this.evalBrowserLibrary(rel, source, element, document);
     else this.evalGlobal(rel, source, element, document);
