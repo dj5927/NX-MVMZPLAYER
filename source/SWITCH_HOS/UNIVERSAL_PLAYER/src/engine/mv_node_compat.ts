@@ -379,4 +379,27 @@ export function installMvNodeRequireCompat(ctx) {
   };
   const requireCompat: any = function(name: any) {
     const id = String(name || '').replace(/\\\\/g, '/');
-    if (/^(?:\.\/)?js\/libs\/greenwo
+    if (/^(?:\.\/)?js\/libs\/greenworks(?:\.js)?$/i.test(id) || id === './js/libs/greenworks') return greenworksStub;
+    if (id === 'fs' || id === 'node:fs') return fsModule;
+    if (id === 'path' || id === 'node:path') return pathModule;
+    if (id === 'buffer' || id === 'node:buffer') return bufferModule;
+    if (id === 'nw.gui' || id === 'nw') return nwGuiModule;
+    if (id === 'child_process' || id === 'node:child_process') return childProcessModule;
+    throw new Error(`MVMZ HOS require module not supported: ${id}`);
+  };
+  requireCompat.__mvmzNodeCompat = true;
+  g.require = requireCompat;
+  if (typeof g.Buffer !== 'function') {
+    g.Buffer = BufferCompat;
+    log('[mv-node] Buffer compatibility installed | encodings=utf8/base64/hex/latin1/ascii');
+  }
+
+  if (!g.process) g.process = {};
+  g.process.mainModule = { filename: join(game.dataRoot, 'index.html') };
+  g.process.cwd = () => runtimeRoot;
+  if (!g.process.platform) g.process.platform = 'linux';
+  if (!g.process.arch) g.process.arch = 'arm64';
+  if (!g.process.versions) g.process.versions = {};
+
+  log(`[mv-node] NW.js require compatibility installed | root=${game.root} dataRoot=${game.dataRoot}`);
+}
