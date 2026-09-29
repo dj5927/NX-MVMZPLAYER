@@ -4,6 +4,7 @@ import { normalizeRelativePath } from '../host/fs';
 import { installMvNativeVideoBridge } from './mv_video';
 import { installMvNativeAudioStream } from './mv_audio_stream';
 import { installMvNodeRequireCompat } from './mv_node_compat';
+import { installMvSlowFrameProfiler } from './mv_slow_profiler';
 import { decodePngExact } from '../compat/png_exact';
 
 var FPSMeterStub = class {
@@ -622,72 +623,6 @@ function tryLoadMvRawCache(ctx, bitmap, url, expectedState) {
 var MV_IMAGE_DECODE_CONCURRENCY = 2;
 var mvImageDecodeActive = 0;
 var mvImageDecodeWaiters = [];
-var MV_IMAGE_BYTE_CACHE_MAX_BYTES = 48 * 1024 * 1024;
-var MV_IMAGE_BYTE_CACHE_MAX_ENTRY_BYTES = 4 * 1024 * 1024;
-var mvImageByteCache = new Map();
-var mvImageByteCacheBytes = 0;
-var mvImageByteCacheLimitBytes = MV_IMAGE_BYTE_CACHE_MAX_BYTES;
-var mvImageByteCacheHitLogs = 0;
-var mvImageByteCacheStoreLogs = 0;
-var mvImageProactiveDecodeLogs = 0;
-function isMvDecodedHotAssetUrl(url) {
-  return /(?:^|\/)img\/(?:animations|characters|tilesets|system|particles|faces|battlebacks1|battlebacks2|enemies|sv_actors|sv_enemies|parallaxes)\//i.test(String(url || "").replace(/\\/g, "/"));
-}
-function isMvProactiveDecodeAssetUrl(url) {
-  return /(?:^|\/)img\/(?:animations|characters|tilesets|system|particles|faces)\//i.test(String(url || "").replace(/\\/g, "/"));
-}
-function getMvImageByteCache(url) {
-  const key = String(url || "");
-  const entry = mvImageByteCache.get(key);
-  if (!entry) return null;
-  mvImageByteCache.delete(key);
-  mvImageByteCache.set(key, entry);
-  return entry.bytes;
-}
-function trimMvImageByteCache(targetBytes = mvImageByteCacheLimitBytes) {
-  const target = Math.max(0, Number(targetBytes || 0));
-  while (mvImageByteCacheBytes > target && mvImageByteCache.size > 0) {
-    const oldestKey = mvImageByteCache.keys().next().value;
-    if (oldestKey === void 0) break;
-    const entry = mvImageByteCache.get(oldestKey);
-    mvImageByteCache.delete(oldestKey);
-    mvImageByteCacheBytes -= Number(entry?.size || 0);
-  }
-  if (mvImageByteCacheBytes < 0) mvImageByteCacheBytes = 0;
-}
-function putMvImageByteCache(ctx, url, bytes, reason) {
-  const key = String(url || "");
-  if (!key || /^data:/i.test(key)) return bytes;
-  const size = Number(bytes?.byteLength || 0);
-  if (!size || size > MV_IMAGE_BYTE_CACHE_MAX_ENTRY_BYTES) return bytes;
-  const previous = mvImageByteCache.get(key);
-  if (previous) {
-    mvImageByteCacheBytes -= Number(previous.size || 0);
-    mvImageByteCache.delete(key);
-  }
-  mvImageByteCache.set(key, { bytes, size });
-  mvImageByteCacheBytes += size;
-  trimMvImageByteCache();
-  if (mvImageByteCacheStoreLogs < 24) {
-    mvImageByteCacheStoreLogs++;
-    ctx.log(`[mv-img-hot] byte STORE | ${key} bytes=${size} reason=${reason} entries=${mvImageByteCache.size} totalMiB=${(mvImageByteCacheBytes / 1048576).toFixed(1)}`);
-    if (mvImageByteCacheStoreLogs === 24) ctx.log("[mv-img-hot] further byte STORE logs suppressed");
-  }
-  return bytes;
-}
-function loadMvImageBytesCached(ctx, url, loadBytes, reason) {
-  const cached = getMvImageByteCache(url);
-  if (cached) {
-    if (mvImageByteCacheHitLogs < 32) {
-      mvImageByteCacheHitLogs++;
-      ctx.log(`[mv-img-hot] byte HIT | ${String(url || "")} bytes=${Number(cached.byteLength || 0)} reason=${reason}`);
-      if (mvImageByteCacheHitLogs === 32) ctx.log("[mv-img-hot] further byte HIT logs suppressed");
-    }
-    return cached;
-  }
-  const bytes = loadBytes();
-  return putMvImageByteCache(ctx, url, bytes, reason);
-}
 async function withMvImageDecodeSlot(work) {
   if (mvImageDecodeActive >= MV_IMAGE_DECODE_CONCURRENCY) {
     await new Promise((resolve) => mvImageDecodeWaiters.push(resolve));
@@ -811,26 +746,11 @@ function scheduleMvBitmapDecode(ctx, bitmap, url, expectedState, loadBytes) {
     if (bitmap._loadingState !== expectedState) return;
     try {
       if (tryLoadMvRawCache(ctx, bitmap, url, expectedState)) return;
-      const bytes = loadMvImageBytesCached(ctx, url, loadBytes, "decode");
+      const bytes = loadBytes();
       await decodeBitmapBytes(ctx, bitmap, bytes, url, expectedState);
     } catch (error) {
       bitmap._loadingState = "error";
       ctx.log(`[mv-img] read/decrypt FAILED | state=${expectedState} url=${url} | ${String(error)}`);
-    }
-  });
-}
-function scheduleMvBitmapBytePrefetch(ctx, bitmap, url, expectedState, loadBytes) {
-  void Promise.resolve().then(() => {
-    if (bitmap._loadingState !== expectedState) return;
-    try {
-      loadMvImageBytesCached(ctx, url, loadBytes, "request-prefetch");
-      if (bitmap._loadingState !== expectedState) return;
-      bitmap._image = null;
-      bitmap._loadingState = "purged";
-      ctx.log(`[mv-img-hot] request prefetch ready | ${url}`);
-    } catch (error) {
-      bitmap._loadingState = "error";
-      ctx.log(`[mv-img-hot] request prefetch FAILED | ${url} | ${String(error)}`);
     }
   });
 }
@@ -861,43 +781,11 @@ function installMvRegularImageBridge(ctx) {
     }
     this._url = url;
     this._loadingState = "requesting";
-    this.__mvmzLastDecodeWaitMarker = "";
     ctx.log(`[mv-img] requestImage | decode=${!!this._decodeAfterRequest} url=${url}`);
     if (!this._decodeAfterRequest) {
-      if (/^data:image\//i.test(String(url || ""))) {
-        this._image = null;
-        this._loadingState = "purged";
-        return;
-      }
-      if (isMvProactiveDecodeAssetUrl(url)) {
-        this._decodeAfterRequest = true;
-        if (mvImageProactiveDecodeLogs < 24) {
-          mvImageProactiveDecodeLogs++;
-          ctx.log(`[mv-img-hot] request PREDECODE | ${url}`);
-          if (mvImageProactiveDecodeLogs === 24) ctx.log("[mv-img-hot] further request PREDECODE logs suppressed");
-        }
-        if (!g.Decrypter.checkImgIgnore(url) && g.Decrypter.hasEncryptedImages) {
-          this._loadingState = "decrypting";
-          const encryptedUrl = g.Decrypter.extToEncryptExt(url);
-          scheduleMvBitmapDecode(ctx, this, url, "decrypting", () => {
-            const encryptedBytes = ctx.fs.readBuffer(encryptedUrl);
-            return g.Decrypter.decryptArrayBuffer(encryptedBytes);
-          });
-        } else {
-          scheduleMvBitmapDecode(ctx, this, url, "requesting", () => ctx.fs.readBuffer(url));
-        }
-        return;
-      }
-      if (!g.Decrypter.checkImgIgnore(url) && g.Decrypter.hasEncryptedImages) {
-        this._loadingState = "decrypting";
-        const encryptedUrl = g.Decrypter.extToEncryptExt(url);
-        scheduleMvBitmapBytePrefetch(ctx, this, url, "decrypting", () => {
-          const encryptedBytes = ctx.fs.readBuffer(encryptedUrl);
-          return g.Decrypter.decryptArrayBuffer(encryptedBytes);
-        });
-      } else {
-        scheduleMvBitmapBytePrefetch(ctx, this, url, "requesting", () => ctx.fs.readBuffer(url));
-      }
+      this._image = null;
+      this._loadingState = "purged";
+      ctx.log(`[mv-img] request-only deferred | ${url}`);
       return;
     }
     if (/^data:image\//i.test(String(url || ""))) {
@@ -925,13 +813,7 @@ function installMvBitmapDecodeBridge(ctx) {
       case "requesting":
       case "decrypting":
         this._decodeAfterRequest = true;
-        {
-          const marker = `${state}:${this._url ?? "unknown"}`;
-          if (this.__mvmzLastDecodeWaitMarker !== marker) {
-            this.__mvmzLastDecodeWaitMarker = marker;
-            ctx.log(`[mv-img] decode wait | state=${state} url=${this._url ?? "unknown"}`);
-          }
-        }
+        ctx.log(`[mv-img] decode wait | state=${state} url=${this._url ?? "unknown"}`);
         return;
       case "pending":
       case "purged":
@@ -1346,45 +1228,12 @@ function installMvSceneManagerHostHooks(ctx) {
 function installMvAudioDiagnostics(ctx) {
   const g = globalThis;
   if (!g.WebAudio) return;
-  g.WebAudio.__mvmzDecodedSeCache = g.WebAudio.__mvmzDecodedSeCache || new Map();
-  let seFastHitLogs = 0;
-  const getCachedSe = (url) => {
-    const cache = g.WebAudio.__mvmzDecodedSeCache;
-    const key = String(url || "");
-    if (!/^audio\/se\//i.test(key)) return null;
-    const value = cache.get(key);
-    if (!value) return null;
-    cache.delete(key);
-    cache.set(key, value);
-    return value;
-  };
-  const installCachedSeBuffer = (audio, buffer) => {
-    audio._buffer = buffer;
-    audio._sampleRate = Number(buffer?.sampleRate || audio._sampleRate || 0);
-    audio._totalTime = Number(buffer?.duration || 0);
-    audio._loopStart = 0;
-    audio._loopLength = audio._totalTime;
-    audio._hasError = false;
-  };
   const originalLoad = g.WebAudio.prototype?._load;
   if (typeof originalLoad === "function") {
     g.WebAudio.prototype._load = function(url) {
+      ctx.log(`[mv-audio] load -> ${url}`);
       try {
         this._url = url;
-        const cachedSe = getCachedSe(url);
-        if (cachedSe) {
-          installCachedSeBuffer(this, cachedSe);
-          if (seFastHitLogs < 24) {
-            seFastHitLogs++;
-            ctx.log(`[mv-audio] SE memory HIT | ${url} duration=${Number(cachedSe?.duration || 0).toFixed(2)}s`);
-            if (seFastHitLogs === 24) ctx.log("[mv-audio] further SE memory HIT logs suppressed");
-          }
-          Promise.resolve().then(() => {
-            try { this._onLoad?.(); } catch {}
-          });
-          return;
-        }
-        ctx.log(`[mv-audio] load -> ${url}`);
         let requestUrl = url;
         if (g.Decrypter?.hasEncryptedAudio && typeof g.Decrypter?.extToEncryptExt === "function") {
           try {
@@ -1498,9 +1347,20 @@ function installMvAudioDiagnostics(ctx) {
       }
     };
     g.WebAudio.__mvmzDecodeQueue = Promise.resolve();
+    g.WebAudio.__mvmzDecodedSeCache = g.WebAudio.__mvmzDecodedSeCache || new Map();
     const SE_CACHE_MAX = 64;
     const SE_CACHE_MAX_COMPRESSED = 256 * 1024;
-    const SE_CACHE_MAX_DURATION = 5;
+    const SE_CACHE_MAX_DURATION = 15;
+    const getCachedSe = (url) => {
+      const cache = g.WebAudio.__mvmzDecodedSeCache;
+      const key = String(url || "");
+      if (!/^audio\/se\//i.test(key)) return null;
+      const value = cache.get(key);
+      if (!value) return null;
+      cache.delete(key);
+      cache.set(key, value);
+      return value;
+    };
     const putCachedSe = (url, bytes, buffer) => {
       const key = String(url || "");
       if (!/^audio\/se\//i.test(key)) return;
@@ -2021,141 +1881,11 @@ function installMvImageCachePolicy(ctx) {
   else if (total >= 1024 * 1024 * 1024) limit = 16 * 1e3 * 1e3;
   g.__mvmzMvBaseImageCacheLimit = limit;
   g.ImageCache.limit = limit;
-  const proto = g.ImageCache.prototype;
-  const hot = new Map();
-  let hotPixels = 0;
-  const HOT_LIMIT_PIXELS = 16 * 1e6;
-  let hotLimitPixels = HOT_LIMIT_PIXELS;
-  let hotHitLogs = 0;
-  let hotStoreLogs = 0;
-  const bitmapPixels = (bitmap) => Math.max(1, Number(bitmap?.width || bitmap?.__canvas?.width || bitmap?._canvas?.width || 1)) *
-    Math.max(1, Number(bitmap?.height || bitmap?.__canvas?.height || bitmap?._canvas?.height || 1));
-  const isHotEligible = (bitmap) => {
-    const url = String(bitmap?._url || bitmap?.__mvmzSourceUrl || "").replace(/\\/g, "/");
-    return !!url && isMvDecodedHotAssetUrl(url);
-  };
-  const dropHot = (key) => {
-    const entry = hot.get(key);
-    if (!entry) return;
-    hot.delete(key);
-    hotPixels -= Number(entry.pixels || 0);
-    if (hotPixels < 0) hotPixels = 0;
-  };
-  const trimHot = (targetPixels = hotLimitPixels) => {
-    const target = Math.max(0, Number(targetPixels || 0));
-    while (hotPixels > target && hot.size > 0) {
-      const oldestKey = hot.keys().next().value;
-      if (oldestKey === void 0) break;
-      dropHot(oldestKey);
-    }
-  };
-  const storeHot = (key, bitmap) => {
-    if (!key || !bitmap || !isHotEligible(bitmap)) return;
-    try {
-      if (!bitmap.isReady?.() || bitmap.isRequestOnly?.()) return;
-    } catch {
-      return;
-    }
-    const pixels = bitmapPixels(bitmap);
-    if (pixels > HOT_LIMIT_PIXELS) return;
-    dropHot(key);
-    hot.set(key, { bitmap, pixels });
-    hotPixels += pixels;
-    trimHot();
-    if (hotStoreLogs < 24) {
-      hotStoreLogs++;
-      ctx.log(`[mv-img-hot] decoded STORE | ${String(bitmap?._url || key)} pixels=${pixels} entries=${hot.size} hotMP=${(hotPixels / 1e6).toFixed(1)}`);
-      if (hotStoreLogs === 24) ctx.log("[mv-img-hot] further decoded STORE logs suppressed");
-    }
-  };
-  if (proto && !proto.__mvmzHotAssetCache) {
-    const originalGet = proto.get;
-    const originalAdd = proto.add;
-    const originalReserve = proto.reserve;
-    const originalTruncate = proto._truncateCache;
-    proto.get = function(key) {
-      const normal = originalGet.call(this, key);
-      if (normal) return normal;
-      const entry = hot.get(key);
-      if (!entry?.bitmap) return null;
-      try {
-        if (!entry.bitmap.isReady?.()) {
-          dropHot(key);
-          return null;
-        }
-      } catch {
-        dropHot(key);
-        return null;
-      }
-      hot.delete(key);
-      hot.set(key, entry);
-      if (hotHitLogs < 32) {
-        hotHitLogs++;
-        ctx.log(`[mv-img-hot] decoded HIT | ${String(entry.bitmap?._url || key)} entries=${hot.size} hotMP=${(hotPixels / 1e6).toFixed(1)}`);
-        if (hotHitLogs === 32) ctx.log("[mv-img-hot] further decoded HIT logs suppressed");
-      }
-      return entry.bitmap;
-    };
-    proto.add = function(key, value) {
-      dropHot(key);
-      return originalAdd.call(this, key, value);
-    };
-    proto.reserve = function(key, value, reservationId) {
-      dropHot(key);
-      return originalReserve.call(this, key, value, reservationId);
-    };
-    proto._truncateCache = function() {
-      const before = [];
-      try {
-        const items = this?._items || {};
-        for (const key of Object.keys(items)) {
-          const bitmap = items[key]?.bitmap;
-          if (bitmap && isHotEligible(bitmap)) before.push([key, bitmap]);
-        }
-      } catch {
-      }
-      const result = originalTruncate.apply(this, arguments);
-      try {
-        const items = this?._items || {};
-        for (const [key, bitmap] of before) if (!items[key]) storeHot(key, bitmap);
-      } catch {
-      }
-      return result;
-    };
-    proto.__mvmzHotAssetCache = true;
-  }
-  g.__mvmzMvTrimHotCaches = (level = "emergency") => {
-    const hotTarget = level === "emergency" ? 4 * 1e6 : 8 * 1e6;
-    const byteTarget = level === "emergency" ? 16 * 1024 * 1024 : 32 * 1024 * 1024;
-    hotLimitPixels = hotTarget;
-    mvImageByteCacheLimitBytes = byteTarget;
-    trimHot(hotTarget);
-    trimMvImageByteCache(byteTarget);
-    ctx.log(`[mv-img-hot] pressure trim | level=${level} decodedMP=${(hotPixels / 1e6).toFixed(1)} byteMiB=${(mvImageByteCacheBytes / 1048576).toFixed(1)}`);
-    setTimeout(() => {
-      hotLimitPixels = HOT_LIMIT_PIXELS;
-      mvImageByteCacheLimitBytes = MV_IMAGE_BYTE_CACHE_MAX_BYTES;
-    }, 10000);
-  };
-  let lastHotPressureTrim = 0;
-  setInterval(() => {
-    try {
-      const usedMiB = Number(Switch.memoryUsage().nativeHeapUsed || 0) / 1048576;
-      const now = Date.now();
-      if (usedMiB >= 1750 && now - lastHotPressureTrim >= 12000) {
-        lastHotPressureTrim = now;
-        if (typeof g.__mvmzMvTrimHotCaches === "function") {
-          g.__mvmzMvTrimHotCaches("emergency");
-        }
-      }
-    } catch {
-    }
-  }, 2000);
   try {
     g.ImageManager?._imageCache?._truncateCache?.();
   } catch {
   }
-  ctx.log(`[mv-mem] ImageCache.limit=${(limit / 1e6).toFixed(0)}MP hotDecoded=16MP hotBytes=48MiB nativeTotalMiB=${(total / 1048576).toFixed(1)}`);
+  ctx.log(`[mv-mem] ImageCache.limit=${(limit / 1e6).toFixed(0)}MP nativeTotalMiB=${(total / 1048576).toFixed(1)}`);
 }
 function installMvPictureMemoryReclaimer(ctx) {
   const g = globalThis;
@@ -2879,6 +2609,7 @@ export async function bootMv(ctx, scripts) {
   installMvImageCachePolicy(ctx);
   installMvPictureMemoryReclaimer(ctx);
   log('[mv-warm] V052 all manifest/map warm gates remain disabled; natural on-demand MV loading retained');
+  installMvSlowFrameProfiler(ctx);
   installMvFinalFrameDiagnostics(ctx);
   const g = globalThis;
   if (!g.Utils || g.Utils.RPGMAKER_NAME !== "MV") {
