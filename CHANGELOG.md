@@ -1,3 +1,11 @@
+## 2026-09-29 - V073 stock-memory bandwidth guard
+
+- Reinterpret V071/V072 behavior after device testing showed 2666 memory clock can avoid crashes while 2400 may still crash; stock Switch memory is 1666, so the target must be stock-memory stability rather than overclock tolerance.
+- Disable the experimental aggressive Texture GC path for Yariste and restore common memory-pressure logic to the V070 baseline.
+- Add a Yariste content-scoped bandwidth guard: one image decode at a time, one PIXI prepare upload per frame, and optional decode-slot hold until GPU prepare completes (250 ms safety timeout).
+- Preserve V072 slow-frame profiler, 107 lexical bindings, lazy template compatibility, Buffer/fs support and picture-reclaimer disable.
+- MZ distribution remains exact V059.
+
 ## 2026-09-29 - V072 V070 stability rollback + slow-frame profiler
 
 - Reject V071 as a runtime candidate after device testing showed almost no hitch improvement and an early native-style crash with no JS FATAL.
