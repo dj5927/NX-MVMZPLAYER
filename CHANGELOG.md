@@ -1,3 +1,12 @@
+## 2026-09-29 - V061 Yariste MV global lexical lifetime compatibility
+
+- V060 device test confirmed the async template-map fix: 1,518 templates loaded and Scene_Map was reached.
+- Fix the next Scene_Map stop in Spriteset_Map.createShadow -> ImageManager.loadSystem caused by Yariste core code reading plugin top-level `let _LngImgArr` after the MV plugin batch eval scope had ended.
+- Add content-scoped `scriptLoader.mvBatchGlobalLexicalExports` support. The Yariste rule exports only `_LngImgArr` from inside the same batch eval before the lexical scope disappears.
+- Preserve the actual plugin-built localization array; no image-name list is hardcoded and unrelated MV/MZ titles are unaffected.
+- Improve MV frame exception diagnostics to include error name/message plus stack.
+- Bump MV split player to 0.61.0. MZ remains 0.59.0 and public release remains unchanged.
+
 ## 2026-09-29 - V060 MV Yariste boot compatibility
 
 - Pause MZ optimization; keep the V059 MZ player binary/source unchanged for this candidate.

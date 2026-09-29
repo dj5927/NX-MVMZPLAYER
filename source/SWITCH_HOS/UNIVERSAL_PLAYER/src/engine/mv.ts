@@ -2432,7 +2432,7 @@ function installMvAssetPrewarmBridge(ctx) {
   mapProto.setup = function(mapId) {
     const result = originalSetup.call(this, mapId);
     beginMapWarmGate(Number(mapId || 0));
-    return result;
+    return res    return result;
   };
   const originalSceneMapIsReady = sceneMapProto.isReady;
   sceneMapProto.isReady = function() {
@@ -2489,7 +2489,7 @@ function installMvFinalFrameDiagnostics(ctx) {
   };
   const pluginCatch = sm.catchException?.bind(sm);
   sm.catchException = function(error) {
-    ctx.log(`[mv-frame] EXCEPTION | ${error?.stack ?? String(error)}`);
+    ctx.log(`[mv-frame] EXCEPTION | ${String((error as any)?.name ?? 'Error')}: ${String((error as any)?.message ?? error)} | ${(error as any)?.stack ?? ''}`);
     try {
       return pluginCatch?.(error);
     } catch (secondary) {
@@ -2504,7 +2504,7 @@ function installMvFinalFrameDiagnostics(ctx) {
     try {
       return originalUpdateScene();
     } catch (error) {
-      ctx.log(`[mv-frame] updateScene FAILED frame=${frameCount} scene=${sm._scene?.constructor?.name ?? "none"} started=${!!sm._sceneStarted} | ${error?.stack ?? String(error)}`);
+      ctx.log(`[mv-frame] updateScene FAILED frame=${frameCount} scene=${sm._scene?.constructor?.name ?? "none"} started=${!!sm._sceneStarted} | ${String((error as any)?.name ?? 'Error')}: ${String((error as any)?.message ?? error)} | ${(error as any)?.stack ?? ''}`);
       throw error;
     }
   };

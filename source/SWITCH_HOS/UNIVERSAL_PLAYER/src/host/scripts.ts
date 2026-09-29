@@ -253,10 +253,21 @@ export class ScriptLoader {
     let currentIndex = -1;
     const previousSetter = g.__mvmzPluginBatchSetCurrent;
     const previousIndex = g.__mvmzPluginBatchIndex;
+    const previousLexicalExporter = g.__mvmzPluginBatchLexicalExport;
+    const configuredLexicalExports = Array.isArray(g.__mvmzCompatApi?.config?.scriptLoader?.mvBatchGlobalLexicalExports)
+      ? g.__mvmzCompatApi.config.scriptLoader.mvBatchGlobalLexicalExports
+          .map((name: any) => String(name || '').trim())
+          .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name))
+      : [];
+    const exportedLexicals: string[] = [];
     g.__mvmzPluginBatchSetCurrent = (index: number) => {
       currentIndex = index;
       g.__mvmzPluginBatchIndex = index;
       if (doc) doc.currentScript = batch[index]?.element ?? null;
+    };
+    g.__mvmzPluginBatchLexicalExport = (name: string, value: any) => {
+      g[name] = value;
+      exportedLexicals.push(name);
     };
     const pieces: string[] = [];
     for (let i = 0; i < batch.length; i++) {
@@ -265,9 +276,19 @@ export class ScriptLoader {
       const raw = this.fs.readText(entry.relative);
       pieces.push(`\n;globalThis.__mvmzPluginBatchSetCurrent(${i});\n${raw}\n`);
     }
+    if (configuredLexicalExports.length) {
+      pieces.push(
+        configuredLexicalExports.map((name: string) =>
+          `\n;try{globalThis.__mvmzPluginBatchLexicalExport(${JSON.stringify(name)},${name});}catch(_mvmzLexicalExportError){}\n`
+        ).join('')
+      );
+    }
     this.log(`[script] MV classic batch begin | count=${batch.length}`);
     try {
       (0, eval)(pieces.join('\n'));
+      if (configuredLexicalExports.length) {
+        this.log(`[script] MV classic lexical export | requested=${configuredLexicalExports.join(',')} exported=${exportedLexicals.join(',') || 'none'}`);
+      }
       for (let i = 0; i < batch.length; i++) {
         const entry = batch[i];
         this.log(`[script] OK ${entry.relative}`);
@@ -286,6 +307,7 @@ export class ScriptLoader {
       if (doc) doc.currentScript = previous;
       if (previousSetter === undefined) delete g.__mvmzPluginBatchSetCurrent; else g.__mvmzPluginBatchSetCurrent = previousSetter;
       if (previousIndex === undefined) delete g.__mvmzPluginBatchIndex; else g.__mvmzPluginBatchIndex = previousIndex;
+      if (previousLexicalExporter === undefined) delete g.__mvmzPluginBatchLexicalExport; else g.__mvmzPluginBatchLexicalExport = previousLexicalExporter;
     }
   }
 

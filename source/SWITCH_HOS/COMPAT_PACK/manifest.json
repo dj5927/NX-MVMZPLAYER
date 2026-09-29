@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v060",
+      "id": "game.yariste.mv.boot.v061",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -53,6 +53,11 @@
         ]
       },
       "settings": {
+        "scriptLoader": {
+          "mvBatchGlobalLexicalExports": [
+            "_LngImgArr"
+          ]
+        },
         "mvTemplateEvents": {
           "pluginName": "JsScript104Set",
           "sliceMs": 8,
