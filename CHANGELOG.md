@@ -1,3 +1,14 @@
+## 2026-09-29 - V063 Yariste lazy template-event index
+
+- V062 device run kept heartbeats alive and crossed the old event-640 freeze boundary through event 1216, but the supplied log ended without a JavaScript exception.
+- The same device log revealed a deployment mismatch: V062 compatibility was active while the MV runtime banner still reported v0.61.0.
+- Replace eager boot materialization of all 1,507 Map001 template objects with a raw ArrayBuffer byte-offset/name index and a real lazy Array.
+- At boot, no template event object is JSON.parse'd; indexed access materializes only the requested event and caches it.
+- Name searches use a prebuilt name->index map so `DataManager.searchDataItem` does not force a full array walk/materialization.
+- Preserve Map045 append/ID semantics, V061 `_LngImgArr` export, database-ready latch, content identity and MZ isolation.
+- Real Korean data validation: lazy length 1518, parsedAtBoot=0, raw data ~12.44 MiB; exhaustive later access checked 1517 non-null events with zero mismatches.
+- Bump MV split player to 0.63.0. MZ remains 0.59.0 and public release remains unchanged.
+
 ## 2026-09-29 - V062 Yariste MV frame-yield template parser
 
 - V061 device run confirmed content matching and the selective `_LngImgArr` lexical export, but hard-froze during the 13 MB Map001 template parse after event 640 with no exception or later heartbeat.

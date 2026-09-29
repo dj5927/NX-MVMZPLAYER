@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v062",
+      "id": "game.yariste.mv.boot.v063",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -60,10 +60,10 @@
         },
         "mvTemplateEvents": {
           "pluginName": "JsScript104Set",
-          "eventsPerFrame": 4,
-          "charsPerFrame": 98304,
-          "scanCharsPerYield": 65536,
-          "progressEvery": 64,
+          "indexEventsPerFrame": 32,
+          "indexBytesPerFrame": 262144,
+          "scanBytesPerYield": 65536,
+          "progressEvery": 256,
           "memoizeDatabaseReady": true
         }
       },
