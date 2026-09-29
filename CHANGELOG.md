@@ -1,3 +1,12 @@
+## 2026-09-29 - V067 Yariste BOM-safe event lexical audit
+
+- V066 progressed into Map003 and exposed `DelSprite is not defined` from an event Script.
+- Fix the PC audit blind spot: strip UTF-8 BOM before parsing game JSON. 1,196 of 1,340 JSON files contain BOM.
+- Re-scan executable Script/conditional/variable/move-route/formula code across all language data sets.
+- Cover all 66 real bare plugin lexical references; add 12 missed names including `DelSprite`.
+- Yariste content-specific plugin live bindings are now 70 total with zero uncovered executable references.
+- Bump MV split player to 0.67.0. MZ remains exact 0.59.0.
+
 ## 2026-09-29 - V066 Yariste complete classic-script lexical bridge
 
 - V065 now boots and renders Yariste successfully, then exposed later classic-script lexical gaps in event Script eval and core-to-plugin access.

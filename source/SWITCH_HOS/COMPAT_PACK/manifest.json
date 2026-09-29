@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v066",
+      "id": "game.yariste.mv.boot.v067",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -113,6 +113,18 @@
             "menuBoxOpenFlg",
             "menuOffFlame",
             "saveCheckFlg"
+            ,"DelSprite"
+            ,"NN_PAnime"
+            ,"PL_realX"
+            ,"PL_realY"
+            ,"PL_winX"
+            ,"PL_winY"
+            ,"PN_DbgMenuF3Btn"
+            ,"PN_HScene"
+            ,"PN_PicFlameTop"
+            ,"PN_QSave"
+            ,"PN_ftEnd"
+            ,"PN_fwChara"
           ],
           "mvScriptGlobalLexicalLiveBindings": {
             "js/rpg_windows.js": [
