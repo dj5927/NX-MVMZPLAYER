@@ -254,12 +254,19 @@ export class ScriptLoader {
     const previousSetter = g.__mvmzPluginBatchSetCurrent;
     const previousIndex = g.__mvmzPluginBatchIndex;
     const previousLexicalExporter = g.__mvmzPluginBatchLexicalExport;
+    const previousLexicalBinder = g.__mvmzPluginBatchLexicalBind;
     const configuredLexicalExports = Array.isArray(g.__mvmzCompatApi?.config?.scriptLoader?.mvBatchGlobalLexicalExports)
       ? g.__mvmzCompatApi.config.scriptLoader.mvBatchGlobalLexicalExports
           .map((name: any) => String(name || '').trim())
           .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name))
       : [];
+    const configuredLexicalBindings = Array.isArray(g.__mvmzCompatApi?.config?.scriptLoader?.mvBatchGlobalLexicalLiveBindings)
+      ? g.__mvmzCompatApi.config.scriptLoader.mvBatchGlobalLexicalLiveBindings
+          .map((name: any) => String(name || '').trim())
+          .filter((name: string) => /^[A-Za-z_$][\w$]*$/.test(name))
+      : [];
     const exportedLexicals: string[] = [];
+    const boundLexicals: string[] = [];
     g.__mvmzPluginBatchSetCurrent = (index: number) => {
       currentIndex = index;
       g.__mvmzPluginBatchIndex = index;
@@ -268,6 +275,15 @@ export class ScriptLoader {
     g.__mvmzPluginBatchLexicalExport = (name: string, value: any) => {
       g[name] = value;
       exportedLexicals.push(name);
+    };
+    g.__mvmzPluginBatchLexicalBind = (name: string, getter: () => any, setter: (value: any) => void) => {
+      Object.defineProperty(g, name, {
+        configurable: true,
+        enumerable: true,
+        get: getter,
+        set: setter
+      });
+      boundLexicals.push(name);
     };
     const pieces: string[] = [];
     for (let i = 0; i < batch.length; i++) {
@@ -283,11 +299,21 @@ export class ScriptLoader {
         ).join('')
       );
     }
+    if (configuredLexicalBindings.length) {
+      pieces.push(
+        configuredLexicalBindings.map((name: string) =>
+          `\n;try{globalThis.__mvmzPluginBatchLexicalBind(${JSON.stringify(name)},()=>${name},(_mvmzValue)=>{${name}=_mvmzValue;});}catch(_mvmzLexicalBindError){}\n`
+        ).join('')
+      );
+    }
     this.log(`[script] MV classic batch begin | count=${batch.length}`);
     try {
       (0, eval)(pieces.join('\n'));
       if (configuredLexicalExports.length) {
         this.log(`[script] MV classic lexical export | requested=${configuredLexicalExports.join(',')} exported=${exportedLexicals.join(',') || 'none'}`);
+      }
+      if (configuredLexicalBindings.length) {
+        this.log(`[script] MV classic lexical live-bind | requested=${configuredLexicalBindings.join(',')} bound=${boundLexicals.join(',') || 'none'}`);
       }
       for (let i = 0; i < batch.length; i++) {
         const entry = batch[i];
@@ -308,6 +334,7 @@ export class ScriptLoader {
       if (previousSetter === undefined) delete g.__mvmzPluginBatchSetCurrent; else g.__mvmzPluginBatchSetCurrent = previousSetter;
       if (previousIndex === undefined) delete g.__mvmzPluginBatchIndex; else g.__mvmzPluginBatchIndex = previousIndex;
       if (previousLexicalExporter === undefined) delete g.__mvmzPluginBatchLexicalExport; else g.__mvmzPluginBatchLexicalExport = previousLexicalExporter;
+      if (previousLexicalBinder === undefined) delete g.__mvmzPluginBatchLexicalBind; else g.__mvmzPluginBatchLexicalBind = previousLexicalBinder;
     }
   }
 

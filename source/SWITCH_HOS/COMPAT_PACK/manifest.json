@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "game.yariste.mv.boot.v063",
+      "id": "game.yariste.mv.boot.v064",
       "enabled": true,
       "priority": 1100,
       "match": {
@@ -54,8 +54,10 @@
       },
       "settings": {
         "scriptLoader": {
-          "mvBatchGlobalLexicalExports": [
-            "_LngImgArr"
+          "mvBatchGlobalLexicalLiveBindings": [
+            "_LngImgArr",
+            "BtlStopEventFlame",
+            "RecoSaveArr"
           ]
         },
         "mvTemplateEvents": {

@@ -1,3 +1,13 @@
+## 2026-09-29 - V064 Yariste live lexical bindings
+
+- V063 device test confirmed the lazy template architecture: Map001 1,507 records indexed, merged length 1,518, parsedAtBoot=0, and Scene_Map reached.
+- Fix the next failure: `ReferenceError: BtlStopEventFlame is not defined` from Yariste's custom `Game_Map.isEventRunning`.
+- Diff Yariste's modified MV core against the standard MV 1.6.1 core and identify exactly three plugin top-level lexical names referenced by custom-added core lines: `_LngImgArr`, `BtlStopEventFlame`, and `RecoSaveArr`.
+- Add content-scoped getter/setter live bindings from the global object to the real plugin lexical variables so runtime reassignment/decrement semantics remain intact.
+- Remove the Yariste snapshot lexical export setting; retain V063 lazy templates unchanged.
+- Host probes verify BtlStopEventFlame 0->90->89 and RecoSaveArr reassignment remain visible to preloaded core functions.
+- Bump MV split player to 0.64.0. MZ remains 0.59.0 and public release remains unchanged.
+
 ## 2026-09-29 - V063 Yariste lazy template-event index
 
 - V062 device run kept heartbeats alive and crossed the old event-640 freeze boundary through event 1216, but the supplied log ended without a JavaScript exception.
