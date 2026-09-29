@@ -44,7 +44,9 @@ export function installMvNativeAudioStream(ctx: RuntimeContext) {
   const pitchDescriptor = Object.getOwnPropertyDescriptor(proto, 'pitch');
   const panDescriptor = Object.getOwnPropertyDescriptor(proto, 'pan');
 
-  const isStreamCategory = (url: any) => /^audio\/(?:bgm|bgs|me|se)\//i.test(String(url || ''));
+  // Short SE stays on WebAudio so repeated effects can reuse decoded
+  // AudioBuffers in memory. BGM/BGS/ME remain on native streaming.
+  const isStreamCategory = (url: any) => /^audio\/(?:bgm|bgs|me)\//i.test(String(url || ''));
   const streamPathFor = (url: string) => {
     let name = String(url || 'audio.ogg')
       .replace(/^https?:\/\//i, '')
@@ -334,5 +336,5 @@ export function installMvNativeAudioStream(ctx: RuntimeContext) {
     });
   }
 
-  ctx.log('[mv-audio-stream] unified native Audio BGM/BGS/ME/SE installed | shared media-element AudioContext | transient SE disposal');
+  ctx.log('[mv-audio-stream] native Audio BGM/BGS/ME installed | short SE=WebAudio decoded-memory cache');
 }
