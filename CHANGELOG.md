@@ -1,3 +1,12 @@
+## 2026-09-29 - V065 Yariste PIXI lexical binding
+
+- V064 device test reached Scene_Map and confirmed the previous BtlStopEventFlame failure is fixed.
+- The first real render then stopped on `ReferenceError: NaGCUpFlg is not defined` inside Yariste's modified `js/libs/pixi.js` TextureGarbageCollector update path.
+- Bind `NaGCUpFlg` live alongside `_LngImgArr`, `BtlStopEventFlame`, and `RecoSaveArr` for the Yariste compatibility profile.
+- Keep V063 lazy-template parsing and memory/render policies unchanged.
+- Host probe verifies plugin false->true request and PIXI true->false reset propagate through the live lexical binding.
+- Bump MV split player to 0.65.0. MZ remains exact 0.59.0.
+
 ## 2026-09-29 - V064 Yariste live lexical bindings
 
 - V063 device test confirmed the lazy template architecture: Map001 1,507 records indexed, merged length 1,518, parsedAtBoot=0, and Scene_Map reached.
