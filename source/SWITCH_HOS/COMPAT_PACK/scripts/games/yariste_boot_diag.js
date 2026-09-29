@@ -3,7 +3,7 @@
   if (!api) return;
   const profile = api.profile || {};
   api.log(
-    'yariste V061 boot profile active | folder=' + String(api.game && api.game.name) +
+    'yariste V062 boot profile active | folder=' + String(api.game && api.game.name) +
     ' pluginSetFp=' + String(profile.pluginSetFingerprint) +
     ' plugins=' + String((profile.pluginNames || []).length) +
     ' coreFp=' + String(profile.coreFingerprint) +

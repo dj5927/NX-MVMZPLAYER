@@ -8,15 +8,24 @@
   const params = g.PluginManager.parameters(pluginName) || {};
   const primaryMapId = Number(params.TemplateMapId || 0);
   const secondaryMapId = Number(params.TemplateMapSecId == null ? -1 : params.TemplateMapSecId);
-  const sliceMs = Math.max(2, Number(config.sliceMs || 8));
-  const progressEvery = Math.max(32, Number(config.progressEvery || 128));
+  const eventsPerFrame = Math.max(1, Number(config.eventsPerFrame || 4));
+  const charsPerFrame = Math.max(16384, Number(config.charsPerFrame || 98304));
+  const scanCharsPerYield = Math.max(16384, Number(config.scanCharsPerYield || 65536));
+  const progressEvery = Math.max(32, Number(config.progressEvery || 64));
 
   if (!(primaryMapId > 0)) {
     api.log('MV template async compat skipped: invalid primary map id for ' + pluginName);
     return;
   }
 
-  const nextTurn = () => new Promise(resolve => setTimeout(resolve, 0));
+  const yieldHostFrame = () => new Promise(resolve => {
+    const raf = typeof g.requestAnimationFrame === 'function' ? g.requestAnimationFrame.bind(g) : null;
+    if (raf) {
+      raf(() => resolve());
+    } else {
+      setTimeout(resolve, 16);
+    }
+  });
   const dataDirectory = () => {
     const mode = String(g.LngMode || '').toLowerCase();
     if (mode === 'en') return 'data_en';
@@ -76,23 +85,29 @@
     throw new Error('top-level events array not found');
   };
 
-  const scanObjectEnd = (text, start) => {
+  const scanObjectEnd = async (text, start) => {
     let depth = 0;
     let inString = false;
     let escaped = false;
+    let sinceYield = 0;
     for (let i = start; i < text.length; i++) {
       const ch = text[i];
+      sinceYield++;
       if (inString) {
         if (escaped) escaped = false;
         else if (ch === '\\') escaped = true;
         else if (ch === '"') inString = false;
-        continue;
+      } else {
+        if (ch === '"') inString = true;
+        else if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) return i + 1;
+        }
       }
-      if (ch === '"') inString = true;
-      else if (ch === '{') depth++;
-      else if (ch === '}') {
-        depth--;
-        if (depth === 0) return i + 1;
+      if (sinceYield >= scanCharsPerYield) {
+        await yieldHostFrame();
+        sinceYield = 0;
       }
     }
     throw new Error('unterminated event object');
@@ -102,15 +117,18 @@
     const start = findEventsArray(text);
     const events = [];
     let pos = start + 1;
-    let sliceStart = Date.now();
+    let frameEvents = 0;
+    let frameChars = 0;
+    let frameYields = 0;
     while (pos < text.length) {
       while (pos < text.length && (text[pos] === ',' || /\s/.test(text[pos]))) pos++;
       if (text[pos] === ']') break;
+      const eventStart = pos;
       if (text.startsWith('null', pos)) {
         events.push(null);
         pos += 4;
       } else if (text[pos] === '{') {
-        const end = scanObjectEnd(text, pos);
+        const end = await scanObjectEnd(text, pos);
         const event = JSON.parse(text.slice(pos, end));
         if (event && event.note !== undefined) g.DataManager.extractMetadata(event);
         events.push(event);
@@ -119,13 +137,18 @@
         throw new Error('unexpected token in events array at ' + pos + ': ' + text.slice(pos, pos + 24));
       }
       if (events.length % progressEvery === 0) {
-        api.log('MV template async parse | ' + label + ' events=' + events.length);
+        api.log('MV template frame parse | ' + label + ' events=' + events.length + ' yields=' + frameYields);
       }
-      if (Date.now() - sliceStart >= sliceMs) {
-        await nextTurn();
-        sliceStart = Date.now();
+      frameEvents++;
+      frameChars += Math.max(1, pos - eventStart);
+      if (frameEvents >= eventsPerFrame || frameChars >= charsPerFrame) {
+        await yieldHostFrame();
+        frameYields++;
+        frameEvents = 0;
+        frameChars = 0;
       }
     }
+    api.log('MV template frame parser complete | ' + label + ' events=' + events.length + ' yields=' + frameYields);
     return events;
   };
 
@@ -191,5 +214,5 @@
     return true;
   };
 
-  api.log('MV template-event async compatibility installed | plugin=' + pluginName + ' primary=' + primaryMapId + ' secondary=' + secondaryMapId + ' sliceMs=' + sliceMs);
+  api.log('MV template-event frame compatibility installed | plugin=' + pluginName + ' primary=' + primaryMapId + ' secondary=' + secondaryMapId + ' eventsPerFrame=' + eventsPerFrame + ' charsPerFrame=' + charsPerFrame + ' scanCharsPerYield=' + scanCharsPerYield);
 })();

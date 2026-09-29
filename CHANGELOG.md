@@ -1,3 +1,12 @@
+## 2026-09-29 - V062 Yariste MV frame-yield template parser
+
+- V061 device run confirmed content matching and the selective `_LngImgArr` lexical export, but hard-froze during the 13 MB Map001 template parse after event 640 with no exception or later heartbeat.
+- Replace the Date.now()/setTimeout(0) parser scheduler with host-frame yielding via `requestAnimationFrame`.
+- Limit work to four events or about 96 KiB per frame, and also yield every 64 KiB while scanning one large event object.
+- Preserve V060/V061 semantics and the V061 lexical export.
+- Real Korean Map001/Map045 validation: 1,518 actual vs 1,518 expected, full serialized equality true, Map001 completed with 379 frame yields and crossed 640/704/768 progress points.
+- Bump MV split player to 0.62.0. MZ remains 0.59.0 and public release remains unchanged.
+
 ## 2026-09-29 - V061 Yariste MV global lexical lifetime compatibility
 
 - V060 device test confirmed the async template-map fix: 1,518 templates loaded and Scene_Map was reached.
