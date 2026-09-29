@@ -22,7 +22,7 @@
     api.log('yariste Yanfly error-log bridge installed');
   }
   api.log(
-    'yariste V072 boot profile active | folder=' + String(api.game && api.game.name) +
+    'yariste V073 boot profile active | folder=' + String(api.game && api.game.name) +
     ' pluginSetFp=' + String(profile.pluginSetFingerprint) +
     ' plugins=' + String((profile.pluginNames || []).length) +
     ' coreFp=' + String(profile.coreFingerprint) +
